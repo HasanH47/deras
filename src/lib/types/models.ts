@@ -5,6 +5,19 @@ export type DownloadState =
 	| { type: "Completed" }
 	| { type: "Error"; message: string };
 
+export type FilterMode =
+  | "all"
+  | "downloading"
+  | "completed"
+  | "Video"
+  | "Audio"
+  | "Document"
+  | "Archive"
+  | "Application"
+  | "Image"
+  | "Other"
+  | "analytics";
+
 export interface ChunkState {
 	id: number;
 	start_byte: number;
@@ -20,8 +33,11 @@ export interface DownloadTask {
 	save_path: string;
 	state: DownloadState;
 	downloaded_bytes: number;
+	format: string;
+	category: "Video" | "Audio" | "Document" | "Archive" | "Application" | "Image" | "Other";
 	total_bytes: number;
 	date_added: string;
 	supports_range: boolean;
 	chunks: ChunkState[] | null;
+	speed_limit_bytes?: number | null;
 }

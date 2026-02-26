@@ -1,12 +1,18 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::models::DownloadTask;
+use crate::scheduler::ScheduleConfig;
+use crate::speed_limiter::SpeedLimiter;
 
 pub struct AppState {
     pub downloads: Mutex<Vec<DownloadTask>>,
     pub data_path: PathBuf,
+    pub global_limiter: Arc<SpeedLimiter>,
+    pub task_limiters: Mutex<HashMap<String, Arc<SpeedLimiter>>>,
+    pub schedule_config: Mutex<ScheduleConfig>,
 }
 
 impl AppState {
@@ -14,7 +20,7 @@ impl AppState {
         fs::create_dir_all(&data_dir).ok();
         let data_path = data_dir.join("downloads.json");
 
-        let downloads = if data_path.exists() {
+        let downloads: Vec<DownloadTask> = if data_path.exists() {
             match fs::read_to_string(&data_path) {
                 Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
                 Err(_) => Vec::new(),
@@ -23,9 +29,19 @@ impl AppState {
             Vec::new()
         };
 
+        let mut task_limiters = HashMap::new();
+        for task in &downloads {
+            if let Some(limit) = task.speed_limit_bytes {
+                task_limiters.insert(task.id.clone(), Arc::new(SpeedLimiter::new(limit)));
+            }
+        }
+
         AppState {
             downloads: Mutex::new(downloads),
             data_path,
+            global_limiter: Arc::new(SpeedLimiter::new(0)),
+            task_limiters: Mutex::new(task_limiters),
+            schedule_config: Mutex::new(ScheduleConfig::default()),
         }
     }
 

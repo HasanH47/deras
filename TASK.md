@@ -59,18 +59,19 @@ This document breaks down the development of the Deras Download Manager into man
 
 **Goal:** Give users fine-grained control over network bandwidth usage and download timing.
 
-- [ ] Implement global bandwidth rate limiting in the Rust backend.
-- [ ] Implement per-download overriding speed limit settings.
-- [ ] Build a Download Scheduler to define active download time windows (e.g., 12 AM - 6 AM).
-- [ ] Update UI with speed limiter inputs and schedule configuration settings.
+- [x] Implement global bandwidth rate limiting in the Rust backend.
+- [x] Implement per-download overriding speed limit settings.
+- [x] Build a Download Scheduler to define active download time windows (e.g., 12 AM - 6 AM).
+- [x] Update UI with speed limiter inputs and schedule configuration settings.
 
 ## Sprint 7: Organization & Batching
 
-**Goal:** Help users manage large volumes of files and automate repetitive tasks.
+**Goal:** Provide better tools for managing multiple downloads and visualizing performance.
 
-- [ ] Implement auto-categorization engine based on file extension rules (e.g., `.mp4` -> Videos).
-- [ ] Build a Batch Link / Site Exporter tool to download multiple files from pasted text.
-- [ ] Build Detailed Analytics Dashboard (Active connections, Speed over time graphs).
+- [x] Implement auto-categorization engine (Video, Audio, Document, etc.) based on file extensions.
+- [x] Add Sidebar category filters in Svelte UI.
+- [x] Build `BatchDownloadDialog.svelte` to parse multiple URLs from pasted text using Regex.
+- [x] Build `AnalyticsDashboard.svelte` to plot total download speed over time.
 
 ## Sprint 8: Browser Integration
 

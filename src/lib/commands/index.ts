@@ -64,3 +64,15 @@ export function listenToClipboardUrl(
 		callback(event.payload);
 	});
 }
+
+export async function setGlobalSpeedLimit(bytes_per_sec: number): Promise<void> {
+	return invoke<void>("set_global_speed_limit", { bytesPerSec: bytes_per_sec });
+}
+
+export async function setDownloadSpeedLimit(id: string, bytes_per_sec: number | null): Promise<void> {
+	return invoke<void>("set_download_speed_limit", { id, bytesPerSec: bytes_per_sec });
+}
+
+export async function setScheduleConfig(enabled: boolean, startTime: string, endTime: string): Promise<void> {
+	return invoke<void>("set_schedule_config", { enabled, startTime, endTime });
+}

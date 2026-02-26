@@ -29,7 +29,9 @@
     ChevronDown,
     Zap,
     ShieldCheck,
+    Gauge,
   } from "@lucide/svelte";
+  import SpeedLimitDialog from "$lib/components/SpeedLimitDialog.svelte";
 
   let {
     downloads,
@@ -42,6 +44,14 @@
     onReorder: () => void;
     onChecksum: (id: string, filename: string) => void;
   } = $props();
+
+  let speedDialogTask = $state<DownloadTask | null>(null);
+  let showSpeedDialog = $state(false);
+
+  function openSpeedDialog(task: DownloadTask) {
+    speedDialogTask = task;
+    showSpeedDialog = true;
+  }
 
   function getStateType(state: DownloadState): string {
     return state.type;
@@ -263,6 +273,24 @@
             </Tooltip>
           {/if}
 
+          {#if task.state.type === "Downloading" || task.state.type === "Paused" || task.state.type === "Pending"}
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8 text-muted-foreground hover:text-blue-400 {task.speed_limit_bytes
+                    ? 'text-blue-500'
+                    : ''}"
+                  onclick={() => openSpeedDialog(task)}
+                >
+                  <Gauge class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Speed Limit</TooltipContent>
+            </Tooltip>
+          {/if}
+
           {#if task.state.type === "Paused" || task.state.type === "Error"}
             <Tooltip>
               <TooltipTrigger>
@@ -332,4 +360,12 @@
       </div>
     {/each}
   </div>
+
+  {#if speedDialogTask}
+    <SpeedLimitDialog
+      bind:open={showSpeedDialog}
+      taskId={speedDialogTask.id}
+      currentLimit={speedDialogTask.speed_limit_bytes}
+    />
+  {/if}
 {/if}

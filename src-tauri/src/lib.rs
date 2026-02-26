@@ -2,6 +2,8 @@ mod clipboard;
 mod commands;
 mod engine;
 mod models;
+pub mod scheduler;
+pub mod speed_limiter;
 mod state;
 
 use engine::ActiveDownloads;
@@ -87,6 +89,12 @@ pub fn run() {
                 clipboard::start_clipboard_monitor(handle).await;
             });
 
+            // ── Scheduler Monitoring ─────────────────────────────────
+            let handle2 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                scheduler::start_scheduler_loop(handle2).await;
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -99,6 +107,9 @@ pub fn run() {
             commands::move_download,
             commands::force_start,
             commands::verify_checksum,
+            commands::set_global_speed_limit,
+            commands::set_download_speed_limit,
+            commands::set_schedule_config,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

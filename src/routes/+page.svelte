@@ -3,18 +3,20 @@
   import DownloadList from "$lib/components/DownloadList.svelte";
   import AddDownloadDialog from "$lib/components/AddDownloadDialog.svelte";
   import NewDownloadModal from "$lib/components/NewDownloadModal.svelte";
+  import AnalyticsDashboard from "$lib/components/AnalyticsDashboard.svelte";
   import ChecksumDialog from "$lib/components/ChecksumDialog.svelte";
   import type { DownloadTask } from "$lib/types/models";
   import {
     getDownloads,
     listenToProgress,
     listenToClipboardUrl,
+    setGlobalSpeedLimit,
+    setScheduleConfig,
   } from "$lib/commands";
   import type { DownloadProgressPayload } from "$lib/commands";
   import { onMount } from "svelte";
   import { toast } from "svelte-sonner";
-
-  type FilterMode = "all" | "downloading" | "completed";
+  import type { FilterMode } from "$lib/types/models";
 
   let downloads = $state<DownloadTask[]>([]);
   let activeFilter = $state<FilterMode>("all");
@@ -40,6 +42,16 @@
         );
       case "completed":
         return downloads.filter((d) => d.state.type === "Completed");
+      case "Video":
+      case "Audio":
+      case "Document":
+      case "Archive":
+      case "Application":
+      case "Image":
+      case "Other":
+        return downloads.filter((d) => d.category === activeFilter);
+      case "analytics":
+        return []; // Analytics doesn't use the filtered list directly
       default:
         return downloads;
     }
@@ -102,6 +114,22 @@
   }
 
   onMount(() => {
+    // Initialize global speed limit from settings
+    const savedLimit = localStorage.getItem("deras_global_speed_limit");
+    if (savedLimit) {
+      const bps = parseInt(savedLimit, 10);
+      if (!isNaN(bps)) {
+        setGlobalSpeedLimit(bps).catch(console.error);
+      }
+    }
+
+    // Initialize scheduler config
+    const schEnabled =
+      localStorage.getItem("deras_schedule_enabled") === "true";
+    const schStart = localStorage.getItem("deras_schedule_start") || "00:00";
+    const schEnd = localStorage.getItem("deras_schedule_end") || "06:00";
+    setScheduleConfig(schEnabled, schStart, schEnd).catch(console.error);
+
     loadDownloads();
 
     const unlistenProgress = listenToProgress(handleProgressUpdate);
@@ -136,12 +164,16 @@
   </header>
 
   <div class="flex-1 overflow-y-auto p-4">
-    <DownloadList
-      downloads={filteredDownloads}
-      onRemove={handleDownloadRemoved}
-      onReorder={loadDownloads}
-      onChecksum={handleChecksum}
-    />
+    {#if activeFilter === "analytics"}
+      <AnalyticsDashboard {downloads} />
+    {:else}
+      <DownloadList
+        downloads={filteredDownloads}
+        onRemove={handleDownloadRemoved}
+        onReorder={loadDownloads}
+        onChecksum={handleChecksum}
+      />
+    {/if}
   </div>
 </main>
 

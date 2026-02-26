@@ -481,6 +481,10 @@ async fn download_chunk(
     let mut chunk_downloaded = chunk.downloaded;
     let mut last_emit = Instant::now();
 
+    let app_state = app_handle.state::<AppState>();
+    let global_limiter = Arc::clone(&app_state.global_limiter);
+    let task_limiter = app_state.task_limiters.lock().unwrap().get(id).cloned();
+
     loop {
         tokio::select! {
             _ = cancel_token.cancelled() => {
@@ -493,10 +497,16 @@ async fn download_chunk(
             chunk_result = stream.next() => {
                 match chunk_result {
                     Some(Ok(data)) => {
+                        let len = data.len();
+                        global_limiter.wait(len).await;
+                        if let Some(ref tl) = task_limiter {
+                            tl.wait(len).await;
+                        }
+
                         tokio::io::AsyncWriteExt::write_all(&mut file, &data)
                             .await
                             .map_err(|e| format!("Chunk {} write error: {}", chunk.id, e))?;
-                        chunk_downloaded += data.len() as u64;
+                        chunk_downloaded += len as u64;
 
                         if last_emit.elapsed().as_millis() >= 100 {
                             let total_downloaded = {
@@ -676,6 +686,9 @@ async fn download_single_attempt(
     let mut downloaded: u64 = 0;
     let mut last_emit = Instant::now();
 
+    let global_limiter = Arc::clone(&app_state.global_limiter);
+    let task_limiter = app_state.task_limiters.lock().unwrap().get(id).cloned();
+
     loop {
         tokio::select! {
             _ = cancel_token.cancelled() => {
@@ -692,10 +705,16 @@ async fn download_single_attempt(
             chunk_result = stream.next() => {
                 match chunk_result {
                     Some(Ok(chunk)) => {
+                        let len = chunk.len();
+                        global_limiter.wait(len).await;
+                        if let Some(ref tl) = task_limiter {
+                            tl.wait(len).await;
+                        }
+
                         tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
                             .await
                             .map_err(|e| format!("Write error: {}", e))?;
-                        downloaded += chunk.len() as u64;
+                        downloaded += len as u64;
 
                         if last_emit.elapsed().as_millis() >= 100 {
                             {

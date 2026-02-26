@@ -28,17 +28,31 @@ pub fn add_download(
         .unwrap_or("unknown")
         .to_string();
 
+    let category = crate::models::FileCategory::from_filename(&filename);
+
+    // Auto-routing: append category folder to the base save_path
+    let final_save_path = {
+        let mut path = std::path::PathBuf::from(shellexpand::tilde(&save_path).into_owned());
+        // E.g., ~/Downloads/Video
+        path.push(format!("{:?}", category));
+        // Create the directory if it doesn't exist
+        let _ = std::fs::create_dir_all(&path);
+        path.to_string_lossy().to_string()
+    };
+
     let task = DownloadTask {
         id: Uuid::new_v4().to_string(),
         url,
         filename,
-        save_path,
+        save_path: final_save_path,
         state: DownloadState::Pending,
         downloaded_bytes: 0,
         total_bytes: 0,
+        category,
         date_added: Utc::now().to_rfc3339(),
         supports_range: false,
         chunks: None,
+        speed_limit_bytes: None,
     };
 
     let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;
@@ -254,4 +268,101 @@ pub async fn verify_checksum(
     };
 
     Ok(computed_hash.to_lowercase() == expected_hash.trim().to_lowercase())
+}
+
+#[tauri::command]
+pub fn set_global_speed_limit(
+    state: tauri::State<'_, crate::state::AppState>,
+    bytes_per_sec: usize,
+) {
+    state.global_limiter.set_limit(bytes_per_sec);
+}
+
+#[tauri::command]
+pub fn set_download_speed_limit(
+    state: tauri::State<'_, crate::state::AppState>,
+    id: String,
+    bytes_per_sec: Option<usize>,
+) -> Result<(), String> {
+    let mut task_limiters = state.task_limiters.lock().unwrap();
+
+    // Update the task definition so it persists
+    {
+        let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;
+        if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
+            t.speed_limit_bytes = bytes_per_sec;
+        } else {
+            return Err("Download not found".to_string());
+        }
+        let _ = state.save();
+    }
+
+    if let Some(bps) = bytes_per_sec {
+        if let Some(limiter) = task_limiters.get(&id) {
+            limiter.set_limit(bps);
+        } else {
+            task_limiters.insert(
+                id,
+                std::sync::Arc::new(crate::speed_limiter::SpeedLimiter::new(bps)),
+            );
+        }
+    } else {
+        task_limiters.remove(&id);
+    }
+
+    Ok(())
+}
+
+pub async fn process_schedule(app_handle: &tauri::AppHandle, is_active: bool) {
+    let state = app_handle.state::<crate::state::AppState>();
+    let mut to_resume = Vec::new();
+    let mut to_pause = Vec::new();
+
+    {
+        let mut downloads = state.downloads.lock().unwrap();
+        for task in downloads.iter_mut() {
+            if is_active {
+                // If we enter active window, resume tasks that were paused by scheduler
+                if let crate::models::DownloadState::Scheduled = task.state {
+                    task.state = crate::models::DownloadState::Pending; // Set to pending to trigger queue
+                    to_resume.push(task.id.clone());
+                }
+            } else {
+                // If we exit active window, pause active downloads and mark as Scheduled
+                if task.state.is_active() {
+                    task.state = crate::models::DownloadState::Scheduled;
+                    to_pause.push(task.id.clone());
+                }
+            }
+        }
+    }
+
+    // Cancel active downloads that needed pausing
+    if !is_active && !to_pause.is_empty() {
+        let active = app_handle.state::<crate::engine::ActiveDownloads>();
+        let mut tokens = active.tokens.lock().unwrap();
+        for id in to_pause {
+            if let Some(token) = tokens.remove(&id) {
+                token.cancel();
+            }
+        }
+    }
+
+    let _ = state.save();
+
+    // Process queue to either start resumed tasks or fill slots of paused tasks
+    crate::engine::process_queue(app_handle);
+}
+
+#[tauri::command]
+pub fn set_schedule_config(
+    state: tauri::State<'_, crate::state::AppState>,
+    enabled: bool,
+    start_time: String,
+    end_time: String,
+) {
+    let mut config = state.schedule_config.lock().unwrap();
+    config.enabled = enabled;
+    config.start_time = start_time;
+    config.end_time = end_time;
 }
