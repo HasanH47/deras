@@ -22,13 +22,16 @@ jobs:
         with:
           node-version: lts/*
 
+      - name: setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-          # Optional: install webkit2gtk-4.0 if needed by some older dependencies
-          # sudo apt-get install -y libwebkit2gtk-4.0-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm
 
       - name: install rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -39,10 +42,10 @@ jobs:
           workspaces: "./src-tauri -> target"
 
       - name: install frontend dependencies
-        run: npm install # Using npm as fallback if bun is not easily available in actions yet, or install bun
+        run: bun install
 
       - name: build frontend
-        run: npm run build
+        run: bun run build
 
       - name: cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml
