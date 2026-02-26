@@ -84,3 +84,31 @@ export async function setDownloadSpeedLimit(id: string, bytes_per_sec: number | 
 export async function setScheduleConfig(enabled: boolean, startTime: string, endTime: string): Promise<void> {
 	return invoke<void>("set_schedule_config", { enabled, startTime, endTime });
 }
+
+export async function updateDownloadUrl(id: string, newUrl: string): Promise<void> {
+  return await invoke("update_download_url", { id, newUrl });
+}
+
+export async function saveCredential(credential: any): Promise<void> {
+  return await invoke("save_credential", { credential });
+}
+
+export async function deleteCredential(domain: string): Promise<void> {
+  return await invoke("delete_credential", { domain });
+}
+
+export async function getCredentials(): Promise<any[]> {
+  return await invoke("get_credentials");
+}
+
+export async function getTaskLogs(id: string): Promise<string[]> {
+  return await invoke("get_task_logs", { id });
+}
+
+export async function openFolder(path: string): Promise<void> {
+  return await invoke("open_folder", { path });
+}
+
+export async function redownloadTask(id: string): Promise<void> {
+  return await invoke("redownload_task", { id });
+}

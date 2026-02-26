@@ -30,8 +30,15 @@
     Zap,
     ShieldCheck,
     Gauge,
+    RefreshCw,
+    Terminal,
+    FolderOpen,
+    RotateCcw,
   } from "@lucide/svelte";
   import SpeedLimitDialog from "$lib/components/SpeedLimitDialog.svelte";
+  import RefreshUrlModal from "$lib/components/RefreshUrlModal.svelte";
+  import TaskLogDialog from "$lib/components/TaskLogDialog.svelte";
+  import { openFolder, redownloadTask } from "$lib/commands";
 
   let {
     downloads,
@@ -48,9 +55,41 @@
   let speedDialogTask = $state<DownloadTask | null>(null);
   let showSpeedDialog = $state(false);
 
+  let refreshDialogTask = $state<DownloadTask | null>(null);
+  let showRefreshDialog = $state(false);
+
+  let logDialogTask = $state<DownloadTask | null>(null);
+  let showLogDialog = $state(false);
+
   function openSpeedDialog(task: DownloadTask) {
     speedDialogTask = task;
     showSpeedDialog = true;
+  }
+
+  function openRefreshDialog(task: DownloadTask) {
+    refreshDialogTask = task;
+    showRefreshDialog = true;
+  }
+
+  function openLogDialog(task: DownloadTask) {
+    logDialogTask = task;
+    showLogDialog = true;
+  }
+
+  async function handleOpenFolder(path: string) {
+    try {
+      await openFolder(path);
+    } catch (e) {
+      console.error("Failed to open folder:", e);
+    }
+  }
+
+  async function handleRedownload(id: string) {
+    try {
+      await redownloadTask(id);
+    } catch (e) {
+      console.error("Failed to redownload:", e);
+    }
   }
 
   function getStateType(state: DownloadState): string {
@@ -102,18 +141,34 @@
   }
 
   async function handlePause(id: string) {
+    // Optimistic update
+    downloads = downloads.map((d) =>
+      d.id === id ? { ...d, state: { type: "Paused" } } : d,
+    );
     try {
       await pauseDownload(id);
     } catch (e) {
       console.error("Failed to pause download:", e);
+      // Revert if failed
+      downloads = downloads.map((d) =>
+        d.id === id ? { ...d, state: { type: "Downloading" } } : d,
+      );
     }
   }
 
   async function handleResume(id: string) {
+    // Optimistic update
+    downloads = downloads.map((d) =>
+      d.id === id ? { ...d, state: { type: "Downloading" } } : d,
+    );
     try {
       await resumeDownload(id);
     } catch (e) {
       console.error("Failed to resume download:", e);
+      // Revert if failed
+      downloads = downloads.map((d) =>
+        d.id === id ? { ...d, state: { type: "Paused" } } : d,
+      );
     }
   }
 
@@ -297,6 +352,19 @@
                 <Button
                   variant="ghost"
                   size="icon"
+                  class="h-8 w-8 text-muted-foreground hover:text-blue-400"
+                  onclick={() => openRefreshDialog(task)}
+                >
+                  <RefreshCw class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Refresh Link</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   class="h-8 w-8 text-muted-foreground hover:text-green-400"
                   onclick={() => handleResume(task.id)}
                 >
@@ -347,6 +415,19 @@
                 <Button
                   variant="ghost"
                   size="icon"
+                  class="h-8 w-8 text-muted-foreground hover:text-yellow-400"
+                  onclick={() => handleRedownload(task.id)}
+                >
+                  <RotateCcw class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Re-download</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   class="h-8 w-8 text-muted-foreground hover:text-destructive"
                   onclick={() => handleRemove(task.id)}
                 >
@@ -356,6 +437,34 @@
               <TooltipContent>Remove</TooltipContent>
             </Tooltip>
           {/if}
+
+          <Tooltip>
+            <TooltipTrigger>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8 text-muted-foreground hover:text-blue-400"
+                onclick={() => openLogDialog(task)}
+              >
+                <Terminal class="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>View Logs</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8 text-muted-foreground hover:text-primary"
+                onclick={() => handleOpenFolder(task.save_path)}
+              >
+                <FolderOpen class="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Open Folder</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     {/each}
@@ -366,6 +475,18 @@
       bind:open={showSpeedDialog}
       taskId={speedDialogTask.id}
       currentLimit={speedDialogTask.speed_limit_bytes}
+    />
+  {/if}
+
+  {#if refreshDialogTask}
+    <RefreshUrlModal bind:open={showRefreshDialog} task={refreshDialogTask} />
+  {/if}
+
+  {#if logDialogTask}
+    <TaskLogDialog
+      bind:open={showLogDialog}
+      taskId={logDialogTask.id}
+      filename={logDialogTask.filename}
     />
   {/if}
 {/if}

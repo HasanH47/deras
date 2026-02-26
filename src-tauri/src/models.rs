@@ -70,6 +70,20 @@ pub struct ChunkState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub message: String,
+    pub level: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Credential {
+    pub domain: String,
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadTask {
     pub id: String,
     pub url: String,
@@ -91,4 +105,6 @@ pub struct DownloadTask {
     pub is_torrent: bool,
     #[serde(default)]
     pub info_hash: Option<String>,
+    #[serde(default)]
+    pub logs: Vec<LogEntry>,
 }

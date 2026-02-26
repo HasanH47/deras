@@ -9,6 +9,7 @@ use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Mutex as TokioMutex;
 use tokio_util::sync::CancellationToken;
 
+use crate::commands::log_task;
 use crate::models::{ChunkState, DownloadState, DownloadTask};
 use crate::state::AppState;
 
@@ -42,7 +43,7 @@ impl ActiveDownloads {
     }
 }
 
-fn expand_tilde(path: &str) -> PathBuf {
+pub fn expand_tilde(path: &str) -> PathBuf {
     if path.starts_with("~/") || path == "~" {
         if let Some(home) = dirs::home_dir() {
             return home.join(&path[2..]);
@@ -51,22 +52,58 @@ fn expand_tilde(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-async fn fetch_metadata(client: &reqwest::Client, url: &str) -> Result<(u64, bool), String> {
-    let resp = client
-        .head(url)
-        .send()
-        .await
-        .map_err(|e| format!("HEAD request failed: {}", e))?;
+/// Fetch file metadata (size and range support).
+async fn fetch_metadata(
+    app_state: &AppState,
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<(u64, bool), String> {
+    let mut request = client.head(url);
+    request = add_auth_headers(app_state, url, request);
+    let head_resp = match request.send().await {
+        Ok(r) => r,
+        Err(_) => {
+            // Fallback to GET for servers that don't like HEAD
+            let mut request = client.get(url);
+            request = add_auth_headers(app_state, url, request);
+            request
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?
+        }
+    };
 
-    let content_length = resp.content_length().unwrap_or(0);
-    let supports_range = resp
+    let total_bytes = head_resp
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    let supports_range = head_resp
         .headers()
         .get(reqwest::header::ACCEPT_RANGES)
         .and_then(|v| v.to_str().ok())
-        .map(|v| v.contains("bytes"))
+        .map(|v| v == "bytes")
         .unwrap_or(false);
 
-    Ok((content_length, supports_range))
+    Ok((total_bytes, supports_range))
+}
+
+fn add_auth_headers(
+    app_state: &AppState,
+    url: &str,
+    request: reqwest::RequestBuilder,
+) -> reqwest::RequestBuilder {
+    if let Ok(parsed_url) = url::Url::parse(url) {
+        if let Some(host) = parsed_url.host_str() {
+            let credentials = app_state.credentials.lock().unwrap();
+            if let Some(creds) = credentials.get(host) {
+                return request.basic_auth(&creds.username, Some(&creds.password));
+            }
+        }
+    }
+    request
 }
 
 fn calculate_chunks(total_bytes: u64, num_connections: u32) -> Vec<ChunkState> {
@@ -140,6 +177,7 @@ pub fn process_queue(app_handle: &AppHandle) {
 pub async fn start_download(app_handle: AppHandle, task: DownloadTask, resume: bool) {
     let id = task.id.clone();
     let app_state = app_handle.state::<AppState>();
+    log_task(&app_handle, &id, "Starting download...", "info");
 
     // Register cancellation token
     let cancel_token = CancellationToken::new();
@@ -178,7 +216,8 @@ pub async fn start_download(app_handle: AppHandle, task: DownloadTask, resume: b
     let (total_bytes, supports_range) = if resume && task.total_bytes > 0 {
         (task.total_bytes, task.supports_range)
     } else {
-        match fetch_metadata(&client, &task.url).await {
+        log_task(&app_handle, &id, "Fetching file metadata...", "info");
+        match fetch_metadata(&app_state, &client, &task.url).await {
             Ok(meta) => meta,
             Err(msg) => {
                 set_error(&app_handle, &app_state, &id, &msg);
@@ -455,9 +494,12 @@ async fn download_chunk(
 
     let range_header = format!("bytes={}-{}", range_start, range_end);
 
-    let response = client
+    let mut request = client
         .get(url)
-        .header(reqwest::header::RANGE, &range_header)
+        .header(reqwest::header::RANGE, &range_header);
+    request = add_auth_headers(app_handle.state::<AppState>().inner(), url, request);
+
+    let response = request
         .send()
         .await
         .map_err(|e| format!("Chunk {} network error: {}", chunk.id, e))?;
@@ -523,13 +565,17 @@ async fn download_chunk(
                                 chunks.iter().map(|c| c.downloaded).sum::<u64>()
                             };
                             emit_progress(app_handle, id, DownloadState::Downloading, total_downloaded, total_bytes);
-                            let app_state = app_handle.state::<AppState>();
+
+                            // Persist progress to AppState and disk
                             {
+                                let chunks_state = progress.lock().await.clone();
                                 let mut downloads = app_state.downloads.lock().unwrap();
                                 if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
                                     t.downloaded_bytes = total_downloaded;
+                                    t.chunks = Some(chunks_state);
                                 }
                             }
+                            let _ = app_state.save();
                             last_emit = Instant::now();
                         }
                     }
@@ -674,22 +720,60 @@ async fn download_single_attempt(
 ) -> Result<(), String> {
     let file_path = save_dir.join(filename);
 
-    let response = client
-        .get(url)
+    // Check for existing partial file to resume
+    let mut downloaded: u64 = 0;
+    if let Ok(metadata) = tokio::fs::metadata(&file_path).await {
+        downloaded = metadata.len();
+    }
+
+    let mut request = client.get(url);
+    if downloaded > 0 && total_bytes > 0 {
+        request = request.header(reqwest::header::RANGE, format!("bytes={}-", downloaded));
+    }
+    request = add_auth_headers(app_state, url, request);
+
+    let response = request
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;
 
-    if !response.status().is_success() {
+    if !response.status().is_success() && response.status() != reqwest::StatusCode::PARTIAL_CONTENT
+    {
         return Err(format!("HTTP error: {}", response.status()));
     }
 
-    let mut file = tokio::fs::File::create(&file_path)
-        .await
-        .map_err(|e| format!("File create error: {}", e))?;
+    // If we asked for a range but didn't get partial content, we must restart
+    if downloaded > 0 && response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        downloaded = 0;
+    }
+
+    let mut file = if downloaded > 0 {
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .open(&file_path)
+            .await
+            .map_err(|e| format!("File open error: {}", e))?
+    } else {
+        log_task(app_handle, id, "Pre-allocating file...", "info");
+        let f = tokio::fs::File::create(&file_path)
+            .await
+            .map_err(|e| format!("File create error: {}", e))?;
+        if total_bytes > 0 {
+            if let Err(e) = f.set_len(total_bytes).await {
+                log_task(
+                    app_handle,
+                    id,
+                    &format!("Pre-allocation failed: {}", e),
+                    "warn",
+                );
+            } else {
+                log_task(app_handle, id, "File pre-allocated.", "info");
+            }
+        }
+        f
+    };
 
     let mut stream = response.bytes_stream();
-    let mut downloaded: u64 = 0;
     let mut last_emit = Instant::now();
 
     let global_limiter = Arc::clone(&app_state.global_limiter);

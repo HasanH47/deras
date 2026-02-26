@@ -117,6 +117,13 @@ pub fn run() {
             commands::set_global_speed_limit,
             commands::set_download_speed_limit,
             commands::set_schedule_config,
+            commands::update_download_url,
+            commands::save_credential,
+            commands::delete_credential,
+            commands::get_credentials,
+            commands::get_task_logs,
+            commands::open_folder,
+            commands::redownload_task,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

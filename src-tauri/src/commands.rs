@@ -80,6 +80,7 @@ pub fn add_download_internal(
         speed_limit_bytes: None,
         is_torrent,
         info_hash: None,
+        logs: Vec::new(),
     };
 
     let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;
@@ -343,6 +344,27 @@ pub fn set_download_speed_limit(
     Ok(())
 }
 
+#[tauri::command]
+pub fn update_download_url(
+    state: State<'_, AppState>,
+    id: String,
+    new_url: String,
+) -> Result<(), String> {
+    let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;
+    if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
+        t.url = new_url;
+        // Optionally reset error state if it was in error
+        if let DownloadState::Error(_) = t.state {
+            t.state = DownloadState::Paused;
+        }
+    } else {
+        return Err("Download not found".to_string());
+    }
+    drop(downloads);
+    state.save()?;
+    Ok(())
+}
+
 pub async fn process_schedule(app_handle: &tauri::AppHandle, is_active: bool) {
     let state = app_handle.state::<crate::state::AppState>();
     let mut to_resume = Vec::new();
@@ -382,6 +404,118 @@ pub async fn process_schedule(app_handle: &tauri::AppHandle, is_active: bool) {
 
     // Process queue to either start resumed tasks or fill slots of paused tasks
     crate::engine::process_queue(app_handle);
+}
+
+#[tauri::command]
+pub fn save_credential(
+    state: State<'_, AppState>,
+    credential: crate::models::Credential,
+) -> Result<(), String> {
+    let mut credentials = state.credentials.lock().map_err(|e| e.to_string())?;
+    credentials.insert(credential.domain.clone(), credential);
+    drop(credentials);
+    state.save()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_credential(state: State<'_, AppState>, domain: String) -> Result<(), String> {
+    let mut credentials = state.credentials.lock().map_err(|e| e.to_string())?;
+    credentials.remove(&domain);
+    drop(credentials);
+    state.save()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_credentials(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::models::Credential>, String> {
+    let credentials = state.credentials.lock().map_err(|e| e.to_string())?;
+    Ok(credentials.values().cloned().collect())
+}
+
+pub fn log_task(app_handle: &AppHandle, id: &str, message: &str, level: &str) {
+    let state = app_handle.state::<AppState>();
+    let entry = crate::models::LogEntry {
+        timestamp: Utc::now().to_rfc3339(),
+        message: message.to_string(),
+        level: level.to_string(),
+    };
+
+    let mut downloads = state.downloads.lock().unwrap();
+    if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
+        t.logs.push(entry.clone());
+    }
+    drop(downloads);
+
+    // Emit log event for real-time UI updates
+    let _ = app_handle.emit("task_log", (id.to_string(), entry));
+}
+
+#[tauri::command]
+pub fn get_task_logs(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<crate::models::LogEntry>, String> {
+    let downloads = state.downloads.lock().map_err(|e| e.to_string())?;
+    let task = downloads
+        .iter()
+        .find(|d| d.id == id)
+        .ok_or_else(|| "Download not found".to_string())?;
+    Ok(task.logs.clone())
+}
+
+#[tauri::command]
+pub fn open_folder(path: String) -> Result<(), String> {
+    let path = crate::engine::expand_tilde(&path);
+    if !path.exists() {
+        return Err("Path does not exist".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn redownload_task(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
+    let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;
+    if let Some(task) = downloads.iter_mut().find(|d| d.id == id) {
+        task.downloaded_bytes = 0;
+        task.chunks = None;
+        task.state = crate::models::DownloadState::Pending;
+        task.logs.push(crate::models::LogEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            message: "Download manually reset for re-download.".to_string(),
+            level: "info".to_string(),
+        });
+    }
+    drop(downloads);
+    state.save()?;
+    Ok(())
 }
 
 #[tauri::command]

@@ -13,11 +13,13 @@
     Image as ImageIcon,
     FileQuestion,
     Activity,
+    Shield,
   } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
   import { Separator } from "$lib/components/ui/separator";
   import ThemeToggle from "./ThemeToggle.svelte";
   import SettingsDialog from "./SettingsDialog.svelte";
+  import SiteManagerDialog from "./SiteManagerDialog.svelte";
   import BatchDownloadDialog from "./BatchDownloadDialog.svelte";
   import type { FilterMode } from "$lib/types/models";
 
@@ -32,6 +34,7 @@
   } = $props();
 
   let settingsOpen = $state(false);
+  let siteManagerOpen = $state(false);
   let batchOpen = $state(false);
 
   const navItems: {
@@ -70,6 +73,15 @@
       <span class="text-base font-bold tracking-tight">Deras</span>
     </div>
     <div class="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        class="h-9 w-9"
+        onclick={() => (siteManagerOpen = true)}
+      >
+        <Shield class="h-4 w-4" />
+        <span class="sr-only">Site Manager</span>
+      </Button>
       <Button
         variant="ghost"
         size="icon"
@@ -141,4 +153,5 @@
 </aside>
 
 <SettingsDialog bind:open={settingsOpen} />
+<SiteManagerDialog bind:open={siteManagerOpen} />
 <BatchDownloadDialog bind:open={batchOpen} onAdded={() => {}} />

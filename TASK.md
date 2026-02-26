@@ -81,10 +81,22 @@ This document breaks down the development of the Deras Download Manager into man
 - [x] Implement a WebSocket server or Native Messaging host in the Rust backend.
 - [x] Automatically route intercepted browser downloads to the Deras queue.
 
-## Sprint 9: BitTorrent Support
+## Sprint 9: BitTorrent Support ✅
 
 **Goal:** Expand protocol support beyond standard HTTP/FTP to P2P networks.
 
-- [ ] Research and integrate a Rust P2P library (e.g., `librqbit`).
-- [ ] Support resolving and downloading `.torrent` files.
-- [ ] Support magnet links in the "New Download" modal.
+- [x] Research and integrate a Rust P2P library (e.g., `librqbit`).
+- [x] Support resolving and downloading `.torrent` files.
+- [x] Support magnet links in the "New Download" modal.
+
+## Sprint 10: Robustness & Advanced Features
+
+**Goal:** Fix critical bugs and implement professional features to match industry standards (IDM/FDM).
+
+- [x] **Bug Fix:** Resolve UI sync issue where Pause button requires double-click.
+- [x] **Bug Fix:** Fix resume functionality to continue from the last downloaded byte instead of resetting to 0.
+- [x] **Feature:** Implement "Refresh Download Link" for updating expired URLs on failed downloads.
+- [x] **Feature:** Add "Site Manager" or "Credentials Manager" for authenticated downloads.
+- [x] **Feature:** Implement file pre-allocation for better disk performance on large files.
+- [x] **Polish:** Improve download item context menu with more options (Open Folder, Re-download, etc.).
+- [x] **Polish:** Add detailed log view per download for debugging failures.
