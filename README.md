@@ -55,7 +55,7 @@
 3. **Run in development mode**:
 
    ```bash
-   bun run dev
+   bun run tauri dev
    ```
 
 4. **Build for production**:
