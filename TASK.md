@@ -34,15 +34,15 @@ This document breaks down the development of the Deras Download Manager into man
 - [x] Implement Pause/Resume logic by utilizing HTTP `Range` headers.
 - [x] Update UI to support Pause/Resume/Cancel actions per download item.
 
-## Sprint 4: Queue Management & Error Handling
+## Sprint 4: Queue Management & Error Handling ✅
 
 **Goal:** Make the download manager robust and handle multiple files gracefully.
 
-- [ ] Implement a global task queue in Rust to limit concurrent active downloads.
-- [ ] Add UI controls to manage the queue (move up, move down, force start).
-- [ ] Implement comprehensive error handling (network timeouts, disk full, etc.).
-- [ ] Build an automatic retry mechanism for failed transient downloads.
-- [ ] Design and implement error state UI and user notifications.
+- [x] Implement a global task queue in Rust to limit concurrent active downloads.
+- [x] Add UI controls to manage the queue (move up, move down, force start).
+- [x] Implement comprehensive error handling (network timeouts, disk full, etc.).
+- [x] Build an automatic retry mechanism for failed transient downloads.
+- [x] Design and implement error state UI and user notifications.
 
 ## Sprint 5: System Integration & Polish (Post-MVP)
 

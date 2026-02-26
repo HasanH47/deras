@@ -6,6 +6,7 @@
   import { getDownloads, listenToProgress } from "$lib/commands";
   import type { DownloadProgressPayload } from "$lib/commands";
   import { onMount } from "svelte";
+  import { toast } from "svelte-sonner";
 
   type FilterMode = "all" | "downloading" | "completed";
 
@@ -49,6 +50,20 @@
   function handleProgressUpdate(payload: DownloadProgressPayload) {
     downloads = downloads.map((d) => {
       if (d.id === payload.id) {
+        const prev = d.state.type;
+        const next = payload.state.type;
+
+        // Toast on state transitions
+        if (prev !== next) {
+          if (next === "Completed") {
+            toast.success(`Download complete: ${d.filename}`);
+          } else if (next === "Error" && "message" in payload.state) {
+            toast.error(`Download failed: ${d.filename}`, {
+              description: payload.state.message,
+            });
+          }
+        }
+
         return {
           ...d,
           state: payload.state,
@@ -63,7 +78,6 @@
   onMount(() => {
     loadDownloads();
 
-    // Listen for real-time download progress from the Rust backend
     const unlistenPromise = listenToProgress(handleProgressUpdate);
 
     return () => {
@@ -79,7 +93,6 @@
 />
 
 <main class="flex flex-1 flex-col overflow-hidden">
-  <!-- Header -->
   <header
     class="flex h-14 shrink-0 items-center justify-between border-b border-border px-6"
   >
@@ -91,11 +104,11 @@
     >
   </header>
 
-  <!-- Content -->
   <div class="flex-1 overflow-y-auto p-4">
     <DownloadList
       downloads={filteredDownloads}
       onRemove={handleDownloadRemoved}
+      onReorder={loadDownloads}
     />
   </div>
 </main>

@@ -44,14 +44,10 @@ pub fn add_download(
     let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;
     downloads.insert(0, task.clone());
     drop(downloads);
-
     state.save()?;
 
-    // Spawn the download asynchronously
-    let task_clone = task.clone();
-    tauri::async_runtime::spawn(async move {
-        engine::start_download(app_handle, task_clone, false).await;
-    });
+    // Let the queue processor decide when to start this download
+    engine::process_queue(&app_handle);
 
     Ok(task)
 }
@@ -62,7 +58,6 @@ pub fn pause_download(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<(), String> {
-    // Cancel the running download via its token
     let active = app_handle.state::<ActiveDownloads>();
     {
         let tokens = active.tokens.lock().unwrap();
@@ -72,36 +67,29 @@ pub fn pause_download(
     }
 
     // Update state to Paused
-    let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;
-    if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
-        t.state = DownloadState::Paused;
-    }
-    drop(downloads);
-    state.save()?;
+    let (downloaded_bytes, total_bytes) = {
+        let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;
+        let result = downloads
+            .iter()
+            .find(|d| d.id == id)
+            .map(|d| (d.downloaded_bytes, d.total_bytes))
+            .unwrap_or((0, 0));
+        if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
+            t.state = DownloadState::Paused;
+        }
+        drop(downloads);
+        state.save()?;
+        result
+    };
 
-    // Emit paused event to frontend
     let _ = tauri::Emitter::emit(
         &app_handle,
         "download_progress",
         engine::DownloadProgressPayload {
             id: id.clone(),
             state: DownloadState::Paused,
-            downloaded_bytes: {
-                let downloads = state.downloads.lock().unwrap();
-                downloads
-                    .iter()
-                    .find(|d| d.id == id)
-                    .map(|d| d.downloaded_bytes)
-                    .unwrap_or(0)
-            },
-            total_bytes: {
-                let downloads = state.downloads.lock().unwrap();
-                downloads
-                    .iter()
-                    .find(|d| d.id == id)
-                    .map(|d| d.total_bytes)
-                    .unwrap_or(0)
-            },
+            downloaded_bytes,
+            total_bytes,
         },
     );
 
@@ -123,7 +111,6 @@ pub fn resume_download(
             .ok_or_else(|| "Download not found".to_string())?
     };
 
-    // Re-spawn the download with resume=true
     tauri::async_runtime::spawn(async move {
         engine::start_download(app_handle, task, true).await;
     });
@@ -137,7 +124,6 @@ pub fn cancel_download(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<(), String> {
-    // Cancel the running download
     let active = app_handle.state::<ActiveDownloads>();
     {
         let tokens = active.tokens.lock().unwrap();
@@ -146,7 +132,6 @@ pub fn cancel_download(
         }
     }
 
-    // Remove from state
     let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;
     downloads.retain(|d| d.id != id);
     drop(downloads);
@@ -162,5 +147,64 @@ pub fn remove_download(state: State<'_, AppState>, id: String) -> Result<(), Str
     drop(downloads);
 
     state.save()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn move_download(
+    state: State<'_, AppState>,
+    id: String,
+    direction: String,
+) -> Result<(), String> {
+    let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;
+    let pos = downloads
+        .iter()
+        .position(|d| d.id == id)
+        .ok_or_else(|| "Download not found".to_string())?;
+
+    match direction.as_str() {
+        "up" => {
+            if pos > 0 {
+                downloads.swap(pos, pos - 1);
+            }
+        }
+        "down" => {
+            if pos < downloads.len() - 1 {
+                downloads.swap(pos, pos + 1);
+            }
+        }
+        _ => return Err("Invalid direction. Use 'up' or 'down'.".to_string()),
+    }
+    drop(downloads);
+    state.save()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn force_start(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let task = {
+        let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;
+        let task = downloads
+            .iter()
+            .find(|d| d.id == id)
+            .cloned()
+            .ok_or_else(|| "Download not found".to_string())?;
+        if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
+            t.state = DownloadState::Downloading;
+        }
+        drop(downloads);
+        state.save()?;
+        task
+    };
+
+    // Bypass queue limit
+    tauri::async_runtime::spawn(async move {
+        engine::start_download(app_handle, task, false).await;
+    });
+
     Ok(())
 }

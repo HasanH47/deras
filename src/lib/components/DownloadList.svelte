@@ -5,6 +5,8 @@
     pauseDownload,
     resumeDownload,
     cancelDownload,
+    moveDownload,
+    forceStartDownload,
   } from "$lib/commands";
   import { Progress } from "$lib/components/ui/progress";
   import { Badge } from "$lib/components/ui/badge";
@@ -23,14 +25,19 @@
     X,
     AlertCircle,
     Clock,
+    ChevronUp,
+    ChevronDown,
+    Zap,
   } from "@lucide/svelte";
 
   let {
     downloads,
     onRemove,
+    onReorder,
   }: {
     downloads: DownloadTask[];
     onRemove: (id: string) => void;
+    onReorder: () => void;
   } = $props();
 
   function getStateType(state: DownloadState): string {
@@ -65,6 +72,13 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   }
 
+  function getErrorMessage(state: DownloadState): string {
+    if (state.type === "Error" && "message" in state) {
+      return state.message;
+    }
+    return "";
+  }
+
   async function handleRemove(id: string) {
     try {
       await removeDownload(id);
@@ -96,6 +110,23 @@
       onRemove(id);
     } catch (e) {
       console.error("Failed to cancel download:", e);
+    }
+  }
+
+  async function handleMove(id: string, direction: "up" | "down") {
+    try {
+      await moveDownload(id, direction);
+      onReorder();
+    } catch (e) {
+      console.error("Failed to move download:", e);
+    }
+  }
+
+  async function handleForceStart(id: string) {
+    try {
+      await forceStartDownload(id);
+    } catch (e) {
+      console.error("Failed to force start download:", e);
     }
   }
 </script>
@@ -155,11 +186,13 @@
                 >{getProgress(task)}%</span
               >
             </div>
+          {:else if task.state.type === "Error"}
+            <span class="truncate text-[11px] text-destructive">
+              {getErrorMessage(task.state)}
+            </span>
           {:else}
             <span class="text-[11px] text-muted-foreground">
-              {task.total_bytes > 0
-                ? formatBytes(task.total_bytes)
-                : "Unknown size"}
+              {task.total_bytes > 0 ? formatBytes(task.total_bytes) : "Queued"}
             </span>
           {/if}
         </div>
@@ -168,6 +201,49 @@
         <div
           class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
         >
+          {#if task.state.type === "Pending"}
+            <!-- Queue controls for pending items -->
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onclick={() => handleMove(task.id, "up")}
+                >
+                  <ChevronUp class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Move Up</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onclick={() => handleMove(task.id, "down")}
+                >
+                  <ChevronDown class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Move Down</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7 text-muted-foreground hover:text-yellow-400"
+                  onclick={() => handleForceStart(task.id)}
+                >
+                  <Zap class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Force Start</TooltipContent>
+            </Tooltip>
+          {/if}
+
           {#if task.state.type === "Downloading"}
             <Tooltip>
               <TooltipTrigger>

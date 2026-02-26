@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use tauri::{AppHandle, Emitter, Manager};
@@ -12,6 +12,8 @@ use crate::models::{ChunkState, DownloadState, DownloadTask};
 use crate::state::AppState;
 
 const DEFAULT_CONNECTIONS: u32 = 4;
+const MAX_CONCURRENT_DOWNLOADS: usize = 3;
+const MAX_RETRIES: u32 = 3;
 
 /// Payload emitted to the frontend for progress updates.
 #[derive(Clone, serde::Serialize)]
@@ -23,7 +25,6 @@ pub struct DownloadProgressPayload {
 }
 
 /// Global registry of active download cancellation tokens.
-/// Keyed by download task ID.
 pub struct ActiveDownloads {
     pub tokens: std::sync::Mutex<HashMap<String, CancellationToken>>,
 }
@@ -34,9 +35,12 @@ impl ActiveDownloads {
             tokens: std::sync::Mutex::new(HashMap::new()),
         }
     }
+
+    pub fn active_count(&self) -> usize {
+        self.tokens.lock().unwrap().len()
+    }
 }
 
-/// Expand `~` at the start of a path to the user's home directory.
 fn expand_tilde(path: &str) -> PathBuf {
     if path.starts_with("~/") || path == "~" {
         if let Some(home) = dirs::home_dir() {
@@ -46,7 +50,6 @@ fn expand_tilde(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// Fetch metadata for a URL: content-length and whether Range requests are supported.
 async fn fetch_metadata(client: &reqwest::Client, url: &str) -> Result<(u64, bool), String> {
     let resp = client
         .head(url)
@@ -65,15 +68,13 @@ async fn fetch_metadata(client: &reqwest::Client, url: &str) -> Result<(u64, boo
     Ok((content_length, supports_range))
 }
 
-/// Calculate chunk ranges for multi-connection downloading.
 fn calculate_chunks(total_bytes: u64, num_connections: u32) -> Vec<ChunkState> {
     let chunk_size = total_bytes / num_connections as u64;
     let mut chunks = Vec::new();
-
     for i in 0..num_connections {
         let start = i as u64 * chunk_size;
         let end = if i == num_connections - 1 {
-            total_bytes - 1 // last chunk takes remaining bytes
+            total_bytes - 1
         } else {
             (i as u64 + 1) * chunk_size - 1
         };
@@ -88,12 +89,53 @@ fn calculate_chunks(total_bytes: u64, num_connections: u32) -> Vec<ChunkState> {
     chunks
 }
 
-/// Part file path for a given chunk.
 fn part_file_path(save_dir: &PathBuf, filename: &str, chunk_id: u32) -> PathBuf {
     save_dir.join(format!("{}.deras-part-{}", filename, chunk_id))
 }
 
-/// Start downloading a file. Decides between chunked or single-stream based on server support.
+/// Check the queue and start pending downloads if below the concurrency limit.
+pub fn process_queue(app_handle: &AppHandle) {
+    let active_downloads = app_handle.state::<ActiveDownloads>();
+    let app_state = app_handle.state::<AppState>();
+
+    loop {
+        let active_count = active_downloads.active_count();
+        if active_count >= MAX_CONCURRENT_DOWNLOADS {
+            break;
+        }
+
+        // Find the next pending download
+        let next_task = {
+            let downloads = app_state.downloads.lock().unwrap();
+            downloads
+                .iter()
+                .find(|d| matches!(d.state, DownloadState::Pending))
+                .cloned()
+        };
+
+        match next_task {
+            Some(task) => {
+                // Update state to Downloading so it's not picked again
+                {
+                    let mut downloads = app_state.downloads.lock().unwrap();
+                    if let Some(t) = downloads.iter_mut().find(|d| d.id == task.id) {
+                        t.state = DownloadState::Downloading;
+                    }
+                    drop(downloads);
+                    let _ = app_state.save();
+                }
+
+                let handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    start_download(handle, task, false).await;
+                });
+            }
+            None => break,
+        }
+    }
+}
+
+/// Start downloading a file with queue integration.
 pub async fn start_download(app_handle: AppHandle, task: DownloadTask, resume: bool) {
     let id = task.id.clone();
     let app_state = app_handle.state::<AppState>();
@@ -117,12 +159,15 @@ pub async fn start_download(app_handle: AppHandle, task: DownloadTask, resume: b
             &id,
             &format!("Failed to create directory: {}", e),
         );
+        cleanup_and_process_queue(&app_handle, &id);
         return;
     }
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
 
-    // Fetch metadata if not resuming (or if we don't have it yet)
     let (total_bytes, supports_range) = if resume && task.total_bytes > 0 {
         (task.total_bytes, task.supports_range)
     } else {
@@ -130,6 +175,7 @@ pub async fn start_download(app_handle: AppHandle, task: DownloadTask, resume: b
             Ok(meta) => meta,
             Err(msg) => {
                 set_error(&app_handle, &app_state, &id, &msg);
+                cleanup_and_process_queue(&app_handle, &id);
                 return;
             }
         }
@@ -148,11 +194,8 @@ pub async fn start_download(app_handle: AppHandle, task: DownloadTask, resume: b
     }
     emit_progress(&app_handle, &id, DownloadState::Downloading, 0, total_bytes);
 
-    // Decide download strategy
     if supports_range && total_bytes > 0 {
-        // Multi-connection chunked download
         let chunks = if resume {
-            // Re-use existing chunk states from a paused download
             let downloads = app_state.downloads.lock().unwrap();
             downloads
                 .iter()
@@ -161,7 +204,6 @@ pub async fn start_download(app_handle: AppHandle, task: DownloadTask, resume: b
                 .unwrap_or_else(|| calculate_chunks(total_bytes, DEFAULT_CONNECTIONS))
         } else {
             let chunks = calculate_chunks(total_bytes, DEFAULT_CONNECTIONS);
-            // Save chunks to state
             let mut downloads = app_state.downloads.lock().unwrap();
             if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
                 t.chunks = Some(chunks.clone());
@@ -185,7 +227,6 @@ pub async fn start_download(app_handle: AppHandle, task: DownloadTask, resume: b
         )
         .await;
     } else {
-        // Single-stream fallback
         download_single(
             &app_handle,
             &app_state,
@@ -200,12 +241,21 @@ pub async fn start_download(app_handle: AppHandle, task: DownloadTask, resume: b
         .await;
     }
 
-    // Clean up cancellation token
-    let active = app_handle.state::<ActiveDownloads>();
-    active.tokens.lock().unwrap().remove(&id);
+    // Clean up and process queue for next pending downloads
+    cleanup_and_process_queue(&app_handle, &id);
 }
 
-/// Multi-connection chunked download.
+/// Remove cancellation token and trigger queue processing.
+fn cleanup_and_process_queue(app_handle: &AppHandle, id: &str) {
+    {
+        let active = app_handle.state::<ActiveDownloads>();
+        active.tokens.lock().unwrap().remove(id);
+    }
+    process_queue(app_handle);
+}
+
+// ─── Chunked Download ────────────────────────────────────────────────────────
+
 async fn download_chunked(
     app_handle: &AppHandle,
     app_state: &AppState,
@@ -218,15 +268,13 @@ async fn download_chunked(
     chunks: Vec<ChunkState>,
     cancel_token: CancellationToken,
 ) {
-    // Shared progress counter for aggregation
     let progress = Arc::new(TokioMutex::new(chunks.clone()));
     let mut handles = Vec::new();
 
     for chunk in chunks.iter() {
         if chunk.is_complete {
-            continue; // Skip chunks already completed in a previous session
+            continue;
         }
-
         let client = client.clone();
         let url = url.to_string();
         let part_path = part_file_path(save_dir, filename, chunk.id);
@@ -237,7 +285,7 @@ async fn download_chunked(
         let id_owned = id.to_string();
 
         let handle = tokio::spawn(async move {
-            download_chunk(
+            download_chunk_with_retry(
                 &client,
                 &url,
                 &part_path,
@@ -253,7 +301,6 @@ async fn download_chunked(
         handles.push(handle);
     }
 
-    // Wait for all chunks
     let mut all_ok = true;
     for handle in handles {
         match handle.await {
@@ -264,39 +311,39 @@ async fn download_chunked(
         }
     }
 
-    // Check if we were cancelled (paused)
     if cancel_token.is_cancelled() {
-        // Save current chunk progress for resume
         let chunks_state = progress.lock().await.clone();
         let mut downloads = app_state.downloads.lock().unwrap();
         if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
             t.chunks = Some(chunks_state);
-            // downloaded_bytes is already kept in sync by chunk tasks
         }
         drop(downloads);
         let _ = app_state.save();
-        return; // state already set to Paused by the command
-    }
-
-    if !all_ok {
-        set_error(app_handle, app_state, id, "One or more chunks failed");
         return;
     }
 
-    // Merge part files into final file
+    if !all_ok {
+        set_error(
+            app_handle,
+            app_state,
+            id,
+            "One or more chunks failed after retries",
+        );
+        return;
+    }
+
     let final_path = save_dir.join(filename);
     if let Err(e) = merge_parts(save_dir, filename, chunks.len() as u32, &final_path).await {
         set_error(app_handle, app_state, id, &format!("Merge failed: {}", e));
         return;
     }
 
-    // Mark as completed
     {
         let mut downloads = app_state.downloads.lock().unwrap();
         if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
             t.state = DownloadState::Completed;
             t.downloaded_bytes = total_bytes;
-            t.chunks = None; // Clean up chunk data
+            t.chunks = None;
         }
         drop(downloads);
         let _ = app_state.save();
@@ -310,7 +357,76 @@ async fn download_chunked(
     );
 }
 
-/// Download a single chunk using HTTP Range request.
+/// Download a chunk with automatic retry and exponential backoff.
+async fn download_chunk_with_retry(
+    client: &reqwest::Client,
+    url: &str,
+    part_path: &PathBuf,
+    chunk: ChunkState,
+    progress: Arc<TokioMutex<Vec<ChunkState>>>,
+    cancel_token: CancellationToken,
+    app_handle: &AppHandle,
+    id: &str,
+    total_bytes: u64,
+) -> Result<(), String> {
+    let mut attempts = 0;
+    let mut current_chunk = chunk;
+
+    loop {
+        match download_chunk(
+            client,
+            url,
+            part_path,
+            current_chunk.clone(),
+            Arc::clone(&progress),
+            cancel_token.clone(),
+            app_handle,
+            id,
+            total_bytes,
+        )
+        .await
+        {
+            Ok(()) => return Ok(()),
+            Err(e) if e == "cancelled" => return Err(e),
+            Err(e) if is_filesystem_error(&e) => {
+                // Don't retry filesystem errors (disk full, permissions, etc.)
+                return Err(e);
+            }
+            Err(e) => {
+                attempts += 1;
+                if attempts >= MAX_RETRIES {
+                    return Err(format!("Failed after {} retries: {}", MAX_RETRIES, e));
+                }
+
+                // Refresh current_chunk with latest progress
+                {
+                    let chunks = progress.lock().await;
+                    if let Some(c) = chunks.iter().find(|c| c.id == current_chunk.id) {
+                        current_chunk = c.clone();
+                    }
+                }
+
+                // Exponential backoff: 2s, 4s, 8s
+                let backoff = Duration::from_secs(2u64.pow(attempts));
+                tokio::select! {
+                    _ = cancel_token.cancelled() => return Err("cancelled".to_string()),
+                    _ = tokio::time::sleep(backoff) => {
+                        // Retry
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn is_filesystem_error(msg: &str) -> bool {
+    msg.contains("write error")
+        || msg.contains("file create error")
+        || msg.contains("file open error")
+        || msg.contains("No space left")
+        || msg.contains("Permission denied")
+}
+
 async fn download_chunk(
     client: &reqwest::Client,
     url: &str,
@@ -326,7 +442,6 @@ async fn download_chunk(
     let range_end = chunk.end_byte;
 
     if range_start > range_end {
-        // Chunk already complete
         return Ok(());
     }
 
@@ -348,7 +463,6 @@ async fn download_chunk(
         ));
     }
 
-    // Open file for writing: append if resuming, create if new
     let mut file = if chunk.downloaded > 0 {
         tokio::fs::OpenOptions::new()
             .append(true)
@@ -368,7 +482,6 @@ async fn download_chunk(
     loop {
         tokio::select! {
             _ = cancel_token.cancelled() => {
-                // Paused: update chunk progress and return
                 let mut chunks = progress.lock().await;
                 if let Some(c) = chunks.iter_mut().find(|c| c.id == chunk.id) {
                     c.downloaded = chunk_downloaded;
@@ -383,7 +496,6 @@ async fn download_chunk(
                             .map_err(|e| format!("Chunk {} write error: {}", chunk.id, e))?;
                         chunk_downloaded += data.len() as u64;
 
-                        // Update shared progress and emit throttled events
                         if last_emit.elapsed().as_millis() >= 100 {
                             let total_downloaded = {
                                 let mut chunks = progress.lock().await;
@@ -393,8 +505,6 @@ async fn download_chunk(
                                 chunks.iter().map(|c| c.downloaded).sum::<u64>()
                             };
                             emit_progress(app_handle, id, DownloadState::Downloading, total_downloaded, total_bytes);
-
-                            // Also update in-memory AppState
                             let app_state = app_handle.state::<AppState>();
                             {
                                 let mut downloads = app_state.downloads.lock().unwrap();
@@ -402,15 +512,18 @@ async fn download_chunk(
                                     t.downloaded_bytes = total_downloaded;
                                 }
                             }
-
                             last_emit = Instant::now();
                         }
                     }
                     Some(Err(e)) => {
+                        // Update progress before returning error (for retry)
+                        let mut chunks = progress.lock().await;
+                        if let Some(c) = chunks.iter_mut().find(|c| c.id == chunk.id) {
+                            c.downloaded = chunk_downloaded;
+                        }
                         return Err(format!("Chunk {} stream error: {}", chunk.id, e));
                     }
                     None => {
-                        // Stream ended — chunk complete
                         let mut chunks = progress.lock().await;
                         if let Some(c) = chunks.iter_mut().find(|c| c.id == chunk.id) {
                             c.downloaded = chunk_downloaded;
@@ -426,7 +539,8 @@ async fn download_chunk(
     Ok(())
 }
 
-/// Merge part files into the final output file, then delete the parts.
+// ─── Merge ───────────────────────────────────────────────────────────────────
+
 async fn merge_parts(
     save_dir: &PathBuf,
     filename: &str,
@@ -445,14 +559,14 @@ async fn merge_parts(
         tokio::io::copy(&mut part_file, &mut final_file)
             .await
             .map_err(|e| format!("Failed to copy part {}: {}", i, e))?;
-        // Delete part file after copying
         let _ = tokio::fs::remove_file(&part_path).await;
     }
 
     Ok(())
 }
 
-/// Single-stream fallback download (no Range support).
+// ─── Single-stream fallback ─────────────────────────────────────────────────
+
 async fn download_single(
     app_handle: &AppHandle,
     app_state: &AppState,
@@ -464,38 +578,97 @@ async fn download_single(
     total_bytes: u64,
     cancel_token: CancellationToken,
 ) {
-    let file_path = save_dir.join(filename);
+    let result = download_single_with_retry(
+        app_handle,
+        app_state,
+        client,
+        id,
+        url,
+        filename,
+        save_dir,
+        total_bytes,
+        cancel_token.clone(),
+    )
+    .await;
 
-    let response = match client.get(url).send().await {
-        Ok(resp) => resp,
-        Err(e) => {
-            set_error(app_handle, app_state, id, &format!("Network error: {}", e));
-            return;
+    if let Err(e) = result {
+        if e != "cancelled" {
+            set_error(app_handle, app_state, id, &e);
         }
-    };
+    }
+}
 
-    if !response.status().is_success() {
-        set_error(
+async fn download_single_with_retry(
+    app_handle: &AppHandle,
+    app_state: &AppState,
+    client: &reqwest::Client,
+    id: &str,
+    url: &str,
+    filename: &str,
+    save_dir: &PathBuf,
+    total_bytes: u64,
+    cancel_token: CancellationToken,
+) -> Result<(), String> {
+    let mut attempts = 0;
+
+    loop {
+        match download_single_attempt(
             app_handle,
             app_state,
+            client,
             id,
-            &format!("HTTP error: {}", response.status()),
-        );
-        return;
+            url,
+            filename,
+            save_dir,
+            total_bytes,
+            cancel_token.clone(),
+        )
+        .await
+        {
+            Ok(()) => return Ok(()),
+            Err(e) if e == "cancelled" => return Err(e),
+            Err(e) if is_filesystem_error(&e) => return Err(e),
+            Err(e) => {
+                attempts += 1;
+                if attempts >= MAX_RETRIES {
+                    return Err(format!("Failed after {} retries: {}", MAX_RETRIES, e));
+                }
+                let backoff = Duration::from_secs(2u64.pow(attempts));
+                tokio::select! {
+                    _ = cancel_token.cancelled() => return Err("cancelled".to_string()),
+                    _ = tokio::time::sleep(backoff) => {}
+                }
+            }
+        }
+    }
+}
+
+async fn download_single_attempt(
+    app_handle: &AppHandle,
+    app_state: &AppState,
+    client: &reqwest::Client,
+    id: &str,
+    url: &str,
+    filename: &str,
+    save_dir: &PathBuf,
+    total_bytes: u64,
+    cancel_token: CancellationToken,
+) -> Result<(), String> {
+    let file_path = save_dir.join(filename);
+
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()));
     }
 
-    let mut file = match tokio::fs::File::create(&file_path).await {
-        Ok(f) => f,
-        Err(e) => {
-            set_error(
-                app_handle,
-                app_state,
-                id,
-                &format!("File create error: {}", e),
-            );
-            return;
-        }
-    };
+    let mut file = tokio::fs::File::create(&file_path)
+        .await
+        .map_err(|e| format!("File create error: {}", e))?;
 
     let mut stream = response.bytes_stream();
     let mut downloaded: u64 = 0;
@@ -504,7 +677,6 @@ async fn download_single(
     loop {
         tokio::select! {
             _ = cancel_token.cancelled() => {
-                // Paused
                 {
                     let mut downloads = app_state.downloads.lock().unwrap();
                     if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
@@ -513,15 +685,14 @@ async fn download_single(
                     drop(downloads);
                     let _ = app_state.save();
                 }
-                return;
+                return Err("cancelled".to_string());
             }
             chunk_result = stream.next() => {
                 match chunk_result {
                     Some(Ok(chunk)) => {
-                        if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await {
-                            set_error(app_handle, app_state, id, &format!("Write error: {}", e));
-                            return;
-                        }
+                        tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
+                            .await
+                            .map_err(|e| format!("Write error: {}", e))?;
                         downloaded += chunk.len() as u64;
 
                         if last_emit.elapsed().as_millis() >= 100 {
@@ -536,8 +707,7 @@ async fn download_single(
                         }
                     }
                     Some(Err(e)) => {
-                        set_error(app_handle, app_state, id, &format!("Stream error: {}", e));
-                        return;
+                        return Err(format!("Stream error: {}", e));
                     }
                     None => break,
                 }
@@ -572,7 +742,11 @@ async fn download_single(
         downloaded,
         final_total,
     );
+
+    Ok(())
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 fn emit_progress(
     app_handle: &AppHandle,
