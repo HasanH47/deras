@@ -40,16 +40,19 @@
     <Dialog.Header>
       <Dialog.Title class="flex items-center gap-2">
         <LinkIcon class="h-5 w-5 text-primary" />
-        URL Detected in Clipboard
+        {url.startsWith("magnet:")
+          ? "Magnet Link Detected"
+          : "URL Detected in Clipboard"}
       </Dialog.Title>
       <Dialog.Description>
-        We found a URL in your clipboard. Want to download it?
+        We found a {url.startsWith("magnet:") ? "magnet link" : "URL"} in your clipboard.
+        Want to download it?
       </Dialog.Description>
     </Dialog.Header>
     <div class="flex flex-col gap-3 py-2">
       <Input
         bind:value={url}
-        placeholder="https://example.com/file.zip"
+        placeholder="https://... or magnet:?"
         class="font-mono text-xs"
       />
       <Input bind:value={savePath} placeholder="~/Downloads" class="text-sm" />

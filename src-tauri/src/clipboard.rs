@@ -36,8 +36,10 @@ pub async fn start_clipboard_monitor(app_handle: AppHandle) {
             continue;
         }
 
-        // Check if it's a valid HTTP(S) URL
-        if let Ok(parsed) = Url::parse(&text) {
+        // Check if it's a valid HTTP(S) URL or Magnet link
+        if text.starts_with("magnet:?") {
+            // Valid magnet link
+        } else if let Ok(parsed) = Url::parse(&text) {
             if parsed.scheme() != "http" && parsed.scheme() != "https" {
                 continue;
             }

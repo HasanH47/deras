@@ -87,4 +87,8 @@ pub struct DownloadTask {
     pub chunks: Option<Vec<ChunkState>>,
     #[serde(default)]
     pub speed_limit_bytes: Option<usize>,
+    #[serde(default)]
+    pub is_torrent: bool,
+    #[serde(default)]
+    pub info_hash: Option<String>,
 }

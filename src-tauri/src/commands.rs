@@ -28,14 +28,30 @@ pub fn add_download_internal(
     url: String,
     save_path: String,
 ) -> Result<DownloadTask, String> {
-    let filename = url
-        .split('/')
-        .last()
-        .unwrap_or("unknown")
-        .split('?')
-        .next()
-        .unwrap_or("unknown")
-        .to_string();
+    let is_torrent = url.starts_with("magnet:?");
+
+    // For magnet links, we might not have a filename immediately (it's in the dn= parameter)
+    // We try to extract it, otherwise use a placeholder.
+    let filename = if is_torrent {
+        if let Some(dn_start) = url.find("dn=") {
+            let dn_sub = &url[dn_start + 3..];
+            let dn_end = dn_sub.find('&').unwrap_or(dn_sub.len());
+            let encoded_name = &dn_sub[..dn_end];
+            urlencoding::decode(encoded_name)
+                .map(|cow: std::borrow::Cow<str>| cow.into_owned())
+                .unwrap_or_else(|_| "Unknown_Torrent".to_string())
+        } else {
+            "Unknown_Torrent".to_string()
+        }
+    } else {
+        url.split('/')
+            .last()
+            .unwrap_or("unknown")
+            .split('?')
+            .next()
+            .unwrap_or("unknown")
+            .to_string()
+    };
 
     let category = crate::models::FileCategory::from_filename(&filename);
 
@@ -62,6 +78,8 @@ pub fn add_download_internal(
         supports_range: false,
         chunks: None,
         speed_limit_bytes: None,
+        is_torrent,
+        info_hash: None,
     };
 
     let mut downloads = state.downloads.lock().map_err(|e| e.to_string())?;

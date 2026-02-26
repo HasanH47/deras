@@ -2,6 +2,7 @@ export type DownloadState =
 	| { type: "Pending" }
 	| { type: "Downloading" }
 	| { type: "Paused" }
+	| { type: "Scheduled" }
 	| { type: "Completed" }
 	| { type: "Error"; message: string };
 
@@ -33,11 +34,12 @@ export interface DownloadTask {
 	save_path: string;
 	state: DownloadState;
 	downloaded_bytes: number;
-	format: string;
-	category: "Video" | "Audio" | "Document" | "Archive" | "Application" | "Image" | "Other";
 	total_bytes: number;
+	category: "Video" | "Audio" | "Document" | "Archive" | "Application" | "Image" | "Other";
 	date_added: string;
 	supports_range: boolean;
 	chunks: ChunkState[] | null;
 	speed_limit_bytes?: number | null;
+	is_torrent: boolean;
+	info_hash: string | null;
 }

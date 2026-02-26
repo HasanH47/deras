@@ -164,6 +164,12 @@ pub async fn start_download(app_handle: AppHandle, task: DownloadTask, resume: b
         return;
     }
 
+    if task.is_torrent {
+        start_torrent_download(&app_handle, &app_state, &task, &save_dir, cancel_token).await;
+        cleanup_and_process_queue(&app_handle, &id);
+        return;
+    }
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
@@ -807,4 +813,150 @@ fn send_completion_notification(app_handle: &AppHandle, filename: &str) {
         .title("Deras — Download Complete")
         .body(format!("{} has finished downloading.", filename))
         .show();
+}
+
+fn set_torrent_completed(app_state: &AppState, id: &str, total_bytes: u64) {
+    let mut downloads = app_state.downloads.lock().unwrap();
+    if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
+        t.state = DownloadState::Completed;
+        t.downloaded_bytes = total_bytes;
+        t.total_bytes = total_bytes;
+    }
+    drop(downloads);
+    let _ = app_state.save();
+}
+
+/// Handle BitTorrent protocol downloads asynchronously
+pub async fn start_torrent_download(
+    app_handle: &AppHandle,
+    app_state: &AppState,
+    task: &DownloadTask,
+    save_dir: &PathBuf,
+    cancel_token: CancellationToken,
+) {
+    let id = task.id.clone();
+
+    emit_progress(app_handle, &id, DownloadState::Downloading, 0, 0);
+
+    let session = match librqbit::Session::new(save_dir.clone()).await {
+        Ok(s) => s,
+        Err(e) => {
+            set_error(
+                app_handle,
+                app_state,
+                &id,
+                &format!("Failed to init torrent session: {}", e),
+            );
+            return;
+        }
+    };
+
+    let add_opts = librqbit::AddTorrentOptions {
+        paused: false,
+        overwrite: true,
+        ..Default::default()
+    };
+
+    use librqbit::AddTorrent;
+    let add_torrent = AddTorrent::from_url(task.url.clone());
+
+    let torrent_handle = match session.add_torrent(add_torrent, Some(add_opts)).await {
+        Ok(resp) => {
+            if let Some(handle) = resp.into_handle() {
+                handle
+            } else {
+                set_error(
+                    app_handle,
+                    app_state,
+                    &id,
+                    "Torrent added as list-only unexpectedly",
+                );
+                return;
+            }
+        }
+        Err(e) => {
+            set_error(
+                app_handle,
+                app_state,
+                &id,
+                &format!("Failed to add torrent: {:?}", e),
+            );
+            return;
+        }
+    };
+
+    // Wait for metadata if it's a magnet link
+    if let Err(e) = torrent_handle.wait_until_initialized().await {
+        set_error(
+            app_handle,
+            app_state,
+            &id,
+            &format!("Failed to download torrent metadata: {:?}", e),
+        );
+        return;
+    }
+
+    // Now we have metadata, update the total_bytes in our app state
+    let total_bytes = torrent_handle.stats().total_bytes;
+
+    {
+        let mut downloads = app_state.downloads.lock().unwrap();
+        if let Some(t) = downloads.iter_mut().find(|d| d.id == id) {
+            t.total_bytes = total_bytes;
+            t.info_hash = Some(torrent_handle.info_hash().as_string());
+            if t.filename == "Unknown_Torrent" {
+                if let Some(name) = torrent_handle.name() {
+                    t.filename = name;
+                }
+            }
+        }
+    }
+    let _ = app_state.save();
+
+    let mut interval = tokio::time::interval(Duration::from_millis(1000));
+    loop {
+        tokio::select! {
+            _ = cancel_token.cancelled() => {
+                // If paused from frontend, we just drop the session/handle by breaking
+                // the torrent_handle goes out of scope and librqbit cleans it up.
+                break;
+            }
+            _ = interval.tick() => {
+                let stats = torrent_handle.stats();
+                let downloaded = stats.progress_bytes;
+
+                emit_progress(
+                    app_handle,
+                    &id,
+                    DownloadState::Downloading,
+                    downloaded,
+                    total_bytes,
+                );
+
+                match stats.state {
+                    librqbit::TorrentStatsState::Paused => {
+                        break;
+                    }
+                    librqbit::TorrentStatsState::Error => {
+                        let err_msg = stats.error.unwrap_or_else(|| "Torrent encountered a critical error".to_string());
+                        set_error(app_handle, app_state, &id, &err_msg);
+                        break;
+                    }
+                    _ => {}
+                }
+
+                if stats.finished || (downloaded >= total_bytes && total_bytes > 0) {
+                    emit_progress(
+                        app_handle,
+                        &id,
+                        DownloadState::Completed,
+                        total_bytes,
+                        total_bytes,
+                    );
+                    set_torrent_completed(app_state, &id, total_bytes);
+                    break;
+                }
+            }
+        }
+    }
 }
