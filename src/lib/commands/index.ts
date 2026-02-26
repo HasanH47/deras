@@ -14,6 +14,18 @@ export async function removeDownload(id: string): Promise<void> {
 	return invoke<void>("remove_download", { id });
 }
 
+export async function pauseDownload(id: string): Promise<void> {
+	return invoke<void>("pause_download", { id });
+}
+
+export async function resumeDownload(id: string): Promise<void> {
+	return invoke<void>("resume_download", { id });
+}
+
+export async function cancelDownload(id: string): Promise<void> {
+	return invoke<void>("cancel_download", { id });
+}
+
 export interface DownloadProgressPayload {
 	id: string;
 	state: DownloadState;

@@ -1,14 +1,26 @@
 <script lang="ts">
   import type { DownloadTask, DownloadState } from "$lib/types/models";
-  import { removeDownload } from "$lib/commands";
+  import {
+    removeDownload,
+    pauseDownload,
+    resumeDownload,
+    cancelDownload,
+  } from "$lib/commands";
   import { Progress } from "$lib/components/ui/progress";
   import { Badge } from "$lib/components/ui/badge";
   import { Button } from "$lib/components/ui/button";
+  import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+  } from "$lib/components/ui/tooltip";
   import {
     Trash2,
     FileDown,
     FileCheck2,
     Pause,
+    Play,
+    X,
     AlertCircle,
     Clock,
   } from "@lucide/svelte";
@@ -59,6 +71,31 @@
       onRemove(id);
     } catch (e) {
       console.error("Failed to remove download:", e);
+    }
+  }
+
+  async function handlePause(id: string) {
+    try {
+      await pauseDownload(id);
+    } catch (e) {
+      console.error("Failed to pause download:", e);
+    }
+  }
+
+  async function handleResume(id: string) {
+    try {
+      await resumeDownload(id);
+    } catch (e) {
+      console.error("Failed to resume download:", e);
+    }
+  }
+
+  async function handleCancel(id: string) {
+    try {
+      await cancelDownload(id);
+      onRemove(id);
+    } catch (e) {
+      console.error("Failed to cancel download:", e);
     }
   }
 </script>
@@ -128,14 +165,75 @@
         </div>
 
         <!-- Actions -->
-        <Button
-          variant="ghost"
-          size="icon"
-          class="h-8 w-8 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
-          onclick={() => handleRemove(task.id)}
+        <div
+          class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
         >
-          <Trash2 class="h-4 w-4" />
-        </Button>
+          {#if task.state.type === "Downloading"}
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8 text-muted-foreground hover:text-yellow-400"
+                  onclick={() => handlePause(task.id)}
+                >
+                  <Pause class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Pause</TooltipContent>
+            </Tooltip>
+          {/if}
+
+          {#if task.state.type === "Paused" || task.state.type === "Error"}
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8 text-muted-foreground hover:text-green-400"
+                  onclick={() => handleResume(task.id)}
+                >
+                  <Play class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {task.state.type === "Paused" ? "Resume" : "Retry"}
+              </TooltipContent>
+            </Tooltip>
+          {/if}
+
+          {#if task.state.type === "Downloading" || task.state.type === "Paused" || task.state.type === "Pending"}
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  onclick={() => handleCancel(task.id)}
+                >
+                  <X class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Cancel</TooltipContent>
+            </Tooltip>
+          {/if}
+
+          {#if task.state.type === "Completed" || task.state.type === "Error"}
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  onclick={() => handleRemove(task.id)}
+                >
+                  <Trash2 class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Remove</TooltipContent>
+            </Tooltip>
+          {/if}
+        </div>
       </div>
     {/each}
   </div>

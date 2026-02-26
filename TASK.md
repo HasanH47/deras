@@ -23,16 +23,16 @@ This document breaks down the development of the Deras Download Manager into man
 - [x] Build the UI component to display active downloads and progress bars.
 - [x] Connect the UI "Add Download" form to the Rust backend to start a download.
 
-## Sprint 3: Advanced Downloading (MVP Part 2)
+## Sprint 3: Advanced Downloading (MVP Part 2) ✅
 
 **Goal:** Implement multi-connection chunking and pause/resume functionality.
 
-- [ ] Fetch the `Accept-Ranges` and `Content-Length` headers before downloading.
-- [ ] Implement file splitting logic (calculating chunk ranges based on file size).
-- [ ] Implement concurrent chunk downloading using `tokio` and multiple `reqwest` clients.
-- [ ] Merge downloaded chunks into the final file upon completion.
-- [ ] Implement Pause/Resume logic by utilizing HTTP `Range` headers.
-- [ ] Update UI to support Pause/Resume/Cancel actions per download item.
+- [x] Fetch the `Accept-Ranges` and `Content-Length` headers before downloading.
+- [x] Implement file splitting logic (calculating chunk ranges based on file size).
+- [x] Implement concurrent chunk downloading using `tokio` and multiple `reqwest` clients.
+- [x] Merge downloaded chunks into the final file upon completion.
+- [x] Implement Pause/Resume logic by utilizing HTTP `Range` headers.
+- [x] Update UI to support Pause/Resume/Cancel actions per download item.
 
 ## Sprint 4: Queue Management & Error Handling
 

@@ -3,6 +3,7 @@ mod engine;
 mod models;
 mod state;
 
+use engine::ActiveDownloads;
 use state::AppState;
 use tauri::Manager;
 
@@ -18,12 +19,16 @@ pub fn run() {
 
             let app_state = AppState::new(data_dir);
             app.manage(app_state);
+            app.manage(ActiveDownloads::new());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_downloads,
             commands::add_download,
             commands::remove_download,
+            commands::pause_download,
+            commands::resume_download,
+            commands::cancel_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

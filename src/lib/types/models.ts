@@ -5,6 +5,14 @@ export type DownloadState =
 	| { type: "Completed" }
 	| { type: "Error"; message: string };
 
+export interface ChunkState {
+	id: number;
+	start_byte: number;
+	end_byte: number;
+	downloaded: number;
+	is_complete: boolean;
+}
+
 export interface DownloadTask {
 	id: string;
 	url: string;
@@ -14,4 +22,6 @@ export interface DownloadTask {
 	downloaded_bytes: number;
 	total_bytes: number;
 	date_added: string;
+	supports_range: boolean;
+	chunks: ChunkState[] | null;
 }
