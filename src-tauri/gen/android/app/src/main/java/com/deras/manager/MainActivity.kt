@@ -1,4 +1,4 @@
-package com.deras.app
+package com.deras.manager
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
