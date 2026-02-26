@@ -1,5 +1,5 @@
 use chrono::Utc;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
 use crate::engine::{self, ActiveDownloads};
@@ -68,6 +68,9 @@ pub fn add_download_internal(
     downloads.insert(0, task.clone());
     drop(downloads);
     state.save()?;
+
+    // Notify frontend that a new download was added (useful for external/Axum additions)
+    let _ = app_handle.emit("download_added", task.clone());
 
     // Let the queue processor decide when to start this download
     engine::process_queue(&app_handle);

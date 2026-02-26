@@ -5,7 +5,6 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tower_http::cors::{Any, CorsLayer};
 

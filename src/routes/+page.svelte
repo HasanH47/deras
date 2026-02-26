@@ -10,6 +10,7 @@
     getDownloads,
     listenToProgress,
     listenToClipboardUrl,
+    listenToDownloadAdded,
     setGlobalSpeedLimit,
     setScheduleConfig,
   } from "$lib/commands";
@@ -138,9 +139,18 @@
       showClipboardModal = true;
     });
 
+    const unlistenAdded = listenToDownloadAdded((task: DownloadTask) => {
+      // Ensure we don't duplicate downloads added manually via the UI
+      if (!downloads.find((d) => d.id === task.id)) {
+        downloads = [task, ...downloads];
+        toast.success(`External download intercepted: ${task.filename}`);
+      }
+    });
+
     return () => {
       unlistenProgress.then((unlisten) => unlisten());
       unlistenClipboard.then((unlisten) => unlisten());
+      unlistenAdded.then((unlisten) => unlisten());
     };
   });
 </script>

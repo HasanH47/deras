@@ -65,6 +65,14 @@ export function listenToClipboardUrl(
 	});
 }
 
+export function listenToDownloadAdded(
+	callback: (task: DownloadTask) => void,
+): Promise<() => void> {
+	return listen<DownloadTask>("download_added", (event) => {
+		callback(event.payload);
+	});
+}
+
 export async function setGlobalSpeedLimit(bytes_per_sec: number): Promise<void> {
 	return invoke<void>("set_global_speed_limit", { bytesPerSec: bytes_per_sec });
 }

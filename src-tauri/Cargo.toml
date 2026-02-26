@@ -37,3 +37,4 @@ url = "2"
 shellexpand = "3.1.2"
 axum = "0.8.8"
 tower-http = { version = "0.6.8", features = ["cors"] }
+librqbit = "8.1.1"
