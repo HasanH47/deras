@@ -118,3 +118,12 @@ This document breaks down the development of the Deras Download Manager into man
 - [x] **Assets:** Update application icons (32x32, 128x128) and tray icon.
 - [x] **UI:** Update logo references in Sidebar and main layout.
 - [x] **Documentation:** Rewrite `README.md` with a premium look, features list, and setup guide.
+
+## Sprint 13: Release Verification & Polish
+
+**Goal:** Perform local builds to mirror CI/CD environment and fix final assets.
+
+- [x] **Build:** Run local frontend build to verify Svelte stability.
+- [x] **Build:** Run local `cargo check` for backend integrity.
+- [x] **Build:** Run a full local Tauri build for the current platform (Linux).
+- [x] **Test:** Verify that binary version matches `tauri.conf.json`.
