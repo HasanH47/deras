@@ -6,7 +6,7 @@
   import { Switch } from "$lib/components/ui/switch";
   import { Separator } from "$lib/components/ui/separator";
   import { setGlobalSpeedLimit, setScheduleConfig } from "$lib/commands";
-  import { Settings, Clock } from "@lucide/svelte";
+  import { Save, Clock, Zap, Globe, Settings } from "@lucide/svelte";
 
   let {
     open = $bindable(false),
@@ -138,6 +138,25 @@
             Downloads will automatically pause outside of this window.
           </p>
         {/if}
+      </div>
+
+      <Separator />
+
+      <div class="space-y-4">
+        <div class="space-y-1 mt-2">
+          <Label class="flex items-center gap-2">
+            <Globe class="h-4 w-4 text-primary" />
+            Browser Integration
+          </Label>
+          <p class="text-xs text-muted-foreground mt-1">
+            Deras runs a local API server on <code
+              class="bg-muted px-1 py-0.5 rounded text-[10px] font-mono"
+              >http://127.0.0.1:4142</code
+            >
+            to communicate with the companion extension. Ensure this port is not
+            blocked by your firewall.
+          </p>
+        </div>
       </div>
     </div>
     <Dialog.Footer>

@@ -77,9 +77,9 @@ This document breaks down the development of the Deras Download Manager into man
 
 **Goal:** Intercept downloads seamlessly from the user's web browser without manual copying.
 
-- [ ] Build a companion cross-browser extension (Chrome, Firefox).
-- [ ] Implement a WebSocket server or Native Messaging host in the Rust backend.
-- [ ] Automatically route intercepted browser downloads to the Deras queue.
+- [x] Build a companion cross-browser extension (Chrome, Firefox).
+- [x] Implement a WebSocket server or Native Messaging host in the Rust backend.
+- [x] Automatically route intercepted browser downloads to the Deras queue.
 
 ## Sprint 9: BitTorrent Support
 

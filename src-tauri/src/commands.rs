@@ -19,6 +19,15 @@ pub fn add_download(
     url: String,
     save_path: String,
 ) -> Result<DownloadTask, String> {
+    add_download_internal(&app_handle, &state, url, save_path)
+}
+
+pub fn add_download_internal(
+    app_handle: &AppHandle,
+    state: &AppState,
+    url: String,
+    save_path: String,
+) -> Result<DownloadTask, String> {
     let filename = url
         .split('/')
         .last()

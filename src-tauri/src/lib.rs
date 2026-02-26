@@ -3,6 +3,7 @@ mod commands;
 mod engine;
 mod models;
 pub mod scheduler;
+pub mod server;
 pub mod speed_limiter;
 mod state;
 
@@ -93,6 +94,12 @@ pub fn run() {
             let handle2 = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 scheduler::start_scheduler_loop(handle2).await;
+            });
+
+            // ── Local API Server ─────────────────────────────────────
+            let handle3 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                server::start_local_server(handle3).await;
             });
 
             Ok(())
