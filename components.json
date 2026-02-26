@@ -1,0 +1,21 @@
+{
+  "$schema": "https://next.shadcn-svelte.com/schema.json",
+  "style": "new-york",
+  "tailwind": {
+    "css": "src/app.css",
+    "baseColor": "slate"
+  },
+  "aliases": {
+    "components": "$lib/components",
+    "utils": "$lib/utils",
+    "hooks": "$lib/hooks",
+    "ui": "$lib/components/ui",
+    "lib": "$lib"
+  },
+  "typescript": true,
+  "registries": {
+    "@shadcn": {
+      "url": "https://next.shadcn-svelte.com/r"
+    }
+  }
+}
