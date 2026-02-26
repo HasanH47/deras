@@ -4,7 +4,7 @@
   import { Input } from "$lib/components/ui/input";
   import { Label } from "$lib/components/ui/label";
   import * as Table from "$lib/components/ui/table";
-  import { Trash2, Plus, Globe } from "lucide-svelte";
+  import { Trash2, Plus, Globe } from "@lucide/svelte";
   import {
     getCredentials,
     saveCredential,
