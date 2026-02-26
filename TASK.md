@@ -100,3 +100,21 @@ This document breaks down the development of the Deras Download Manager into man
 - [x] **Feature:** Implement file pre-allocation for better disk performance on large files.
 - [x] **Polish:** Improve download item context menu with more options (Open Folder, Re-download, etc.).
 - [x] **Polish:** Add detailed log view per download for debugging failures.
+
+## Sprint 11: Cross-Platform & CI/CD
+
+**Goal:** Ensure mobile compatibility and automate the build/release process.
+
+- [x] **Test:** Android compatibility check (Tauri Mobile).
+- [x] **Test:** iOS compatibility check (Tauri Mobile).
+- [x] **DevOps:** Create GitHub Action for automated cross-platform builds (Linux, Windows, macOS).
+- [x] **DevOps:** Configure GitHub Release workflow to automatically upload artifacts on tag push.
+
+## Sprint 12: Branding & Identity
+
+**Goal:** Finalize the application's visual identity and documentation.
+
+- [x] **Design:** Generate a professional modern logo representing speed and data flow ("Deras").
+- [x] **Assets:** Update application icons (32x32, 128x128) and tray icon.
+- [x] **UI:** Update logo references in Sidebar and main layout.
+- [x] **Documentation:** Rewrite `README.md` with a premium look, features list, and setup guide.

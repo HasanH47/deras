@@ -21,6 +21,7 @@
   import SettingsDialog from "./SettingsDialog.svelte";
   import SiteManagerDialog from "./SiteManagerDialog.svelte";
   import BatchDownloadDialog from "./BatchDownloadDialog.svelte";
+  import logo from "$lib/assets/logo.png";
   import type { FilterMode } from "$lib/types/models";
 
   let {
@@ -68,9 +69,16 @@
 >
   <!-- Logo / App Name -->
   <div class="flex h-14 items-center justify-between px-5">
-    <div class="flex items-center gap-2">
-      <Download class="h-5 w-5 text-primary" />
-      <span class="text-base font-bold tracking-tight">Deras</span>
+    <div class="flex items-center gap-2.5">
+      <div
+        class="relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-lg bg-primary/10 p-1 ring-1 ring-primary/20"
+      >
+        <img src={logo} alt="Deras" class="h-full w-full object-contain" />
+      </div>
+      <span
+        class="text-base font-bold tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent"
+        >Deras</span
+      >
     </div>
     <div class="flex items-center gap-1">
       <Button

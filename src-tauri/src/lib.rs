@@ -9,12 +9,13 @@ mod state;
 
 use engine::ActiveDownloads;
 use state::AppState;
+#[cfg(not(mobile))]
 use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    Manager, RunEvent, WindowEvent,
 };
+use tauri::{Manager, RunEvent, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -32,27 +33,28 @@ pub fn run() {
             app.manage(app_state);
             app.manage(ActiveDownloads::new());
 
-            // ── System Tray ──────────────────────────────────────────
-            let show = MenuItemBuilder::with_id("show", "Show Deras").build(app)?;
-            let pause_all = MenuItemBuilder::with_id("pause_all", "Pause All").build(app)?;
-            let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+            #[cfg(not(mobile))]
+            {
+                // ── System Tray ──────────────────────────────────────────
+                let show = MenuItemBuilder::with_id("show", "Show Deras").build(app)?;
+                let pause_all = MenuItemBuilder::with_id("pause_all", "Pause All").build(app)?;
+                let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 
-            let menu = MenuBuilder::new(app)
-                .item(&show)
-                .separator()
-                .item(&pause_all)
-                .separator()
-                .item(&quit)
-                .build()?;
+                let menu = MenuBuilder::new(app)
+                    .item(&show)
+                    .separator()
+                    .item(&pause_all)
+                    .separator()
+                    .item(&quit)
+                    .build()?;
 
-            let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
+                let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
 
-            TrayIconBuilder::new()
-                .icon(icon)
-                .tooltip("Deras Download Manager")
-                .menu(&menu)
-                .on_menu_event(move |app, event| {
-                    match event.id().as_ref() {
+                TrayIconBuilder::new()
+                    .icon(icon)
+                    .tooltip("Deras Download Manager")
+                    .menu(&menu)
+                    .on_menu_event(move |app, event| match event.id().as_ref() {
                         "show" => {
                             if let Some(win) = app.get_webview_window("main") {
                                 let _ = win.show();
@@ -71,18 +73,18 @@ pub fn run() {
                             app.exit(0);
                         }
                         _ => {}
-                    }
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
-                        let app = tray.app_handle();
-                        if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.show();
-                            let _ = win.set_focus();
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                            let app = tray.app_handle();
+                            if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.show();
+                                let _ = win.set_focus();
+                            }
                         }
-                    }
-                })
-                .build(app)?;
+                    })
+                    .build(app)?;
+            }
 
             // ── Clipboard Monitoring ─────────────────────────────────
             let handle = app.handle().clone();
@@ -97,10 +99,13 @@ pub fn run() {
             });
 
             // ── Local API Server ─────────────────────────────────────
-            let handle3 = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                server::start_local_server(handle3).await;
-            });
+            #[cfg(not(mobile))]
+            {
+                let handle3 = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    server::start_local_server(handle3).await;
+                });
+            }
 
             Ok(())
         })
@@ -130,6 +135,7 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         // Intercept window close → hide to tray instead of quitting
+        #[cfg(not(mobile))]
         if let RunEvent::WindowEvent {
             label,
             event: WindowEvent::CloseRequested { api, .. },
