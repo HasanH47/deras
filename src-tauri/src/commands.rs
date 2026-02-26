@@ -1,7 +1,8 @@
 use chrono::Utc;
-use tauri::State;
+use tauri::{AppHandle, State};
 use uuid::Uuid;
 
+use crate::engine;
 use crate::models::{DownloadState, DownloadTask};
 use crate::state::AppState;
 
@@ -13,6 +14,7 @@ pub fn get_downloads(state: State<'_, AppState>) -> Result<Vec<DownloadTask>, St
 
 #[tauri::command]
 pub fn add_download(
+    app_handle: AppHandle,
     state: State<'_, AppState>,
     url: String,
     save_path: String,
@@ -42,6 +44,13 @@ pub fn add_download(
     drop(downloads);
 
     state.save()?;
+
+    // Spawn the download asynchronously
+    let task_clone = task.clone();
+    tauri::async_runtime::spawn(async move {
+        engine::start_download(app_handle, task_clone).await;
+    });
+
     Ok(task)
 }
 

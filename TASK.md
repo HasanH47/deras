@@ -13,15 +13,15 @@ This document breaks down the development of the Deras Download Manager into man
 - [x] Create basic data models for a Download Task (URL, state, progress, size).
 - [x] Set up JSON file based persistence for download history in Rust.
 
-## Sprint 2: Core Downloading Engine (MVP Part 1)
+## Sprint 2: Core Downloading Engine (MVP Part 1) ✅
 
 **Goal:** Implement the fundamental ability to download a file using Rust.
 
-- [ ] Implement a basic HTTP GET request using `reqwest` in Rust.
-- [ ] Stream download response to a file on disk (without chunks initially).
-- [ ] Implement Rust-to-Svelte event emission for download progress.
-- [ ] Build the UI component to display active downloads and progress bars.
-- [ ] Connect the UI "Add Download" form to the Rust backend to start a download.
+- [x] Implement a basic HTTP GET request using `reqwest` in Rust.
+- [x] Stream download response to a file on disk (without chunks initially).
+- [x] Implement Rust-to-Svelte event emission for download progress.
+- [x] Build the UI component to display active downloads and progress bars.
+- [x] Connect the UI "Add Download" form to the Rust backend to start a download.
 
 ## Sprint 3: Advanced Downloading (MVP Part 2)
 

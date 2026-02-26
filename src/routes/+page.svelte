@@ -3,7 +3,8 @@
   import DownloadList from "$lib/components/DownloadList.svelte";
   import AddDownloadDialog from "$lib/components/AddDownloadDialog.svelte";
   import type { DownloadTask } from "$lib/types/models";
-  import { getDownloads } from "$lib/commands";
+  import { getDownloads, listenToProgress } from "$lib/commands";
+  import type { DownloadProgressPayload } from "$lib/commands";
   import { onMount } from "svelte";
 
   type FilterMode = "all" | "downloading" | "completed";
@@ -45,8 +46,29 @@
     downloads = downloads.filter((d) => d.id !== id);
   }
 
+  function handleProgressUpdate(payload: DownloadProgressPayload) {
+    downloads = downloads.map((d) => {
+      if (d.id === payload.id) {
+        return {
+          ...d,
+          state: payload.state,
+          downloaded_bytes: payload.downloaded_bytes,
+          total_bytes: payload.total_bytes,
+        };
+      }
+      return d;
+    });
+  }
+
   onMount(() => {
     loadDownloads();
+
+    // Listen for real-time download progress from the Rust backend
+    const unlistenPromise = listenToProgress(handleProgressUpdate);
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
   });
 </script>
 

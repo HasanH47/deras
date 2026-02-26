@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { DownloadTask } from "$lib/types/models";
+import { listen } from "@tauri-apps/api/event";
+import type { DownloadTask, DownloadState } from "$lib/types/models";
 
 export async function getDownloads(): Promise<DownloadTask[]> {
 	return invoke<DownloadTask[]>("get_downloads");
@@ -11,4 +12,19 @@ export async function addDownload(url: string, save_path: string): Promise<Downl
 
 export async function removeDownload(id: string): Promise<void> {
 	return invoke<void>("remove_download", { id });
+}
+
+export interface DownloadProgressPayload {
+	id: string;
+	state: DownloadState;
+	downloaded_bytes: number;
+	total_bytes: number;
+}
+
+export function listenToProgress(
+	callback: (payload: DownloadProgressPayload) => void,
+): Promise<() => void> {
+	return listen<DownloadProgressPayload>("download_progress", (event) => {
+		callback(event.payload);
+	});
 }
