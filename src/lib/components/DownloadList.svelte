@@ -28,16 +28,19 @@
     ChevronUp,
     ChevronDown,
     Zap,
+    ShieldCheck,
   } from "@lucide/svelte";
 
   let {
     downloads,
     onRemove,
     onReorder,
+    onChecksum,
   }: {
     downloads: DownloadTask[];
     onRemove: (id: string) => void;
     onReorder: () => void;
+    onChecksum: (id: string, filename: string) => void;
   } = $props();
 
   function getStateType(state: DownloadState): string {
@@ -291,6 +294,22 @@
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Cancel</TooltipContent>
+            </Tooltip>
+          {/if}
+
+          {#if task.state.type === "Completed"}
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8 text-muted-foreground hover:text-primary"
+                  onclick={() => onChecksum(task.id, task.filename)}
+                >
+                  <ShieldCheck class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Verify Checksum</TooltipContent>
             </Tooltip>
           {/if}
 

@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Mutex as TokioMutex;
 use tokio_util::sync::CancellationToken;
 
@@ -355,6 +356,7 @@ async fn download_chunked(
         total_bytes,
         total_bytes,
     );
+    send_completion_notification(app_handle, filename);
 }
 
 /// Download a chunk with automatic retry and exponential backoff.
@@ -742,6 +744,7 @@ async fn download_single_attempt(
         downloaded,
         final_total,
     );
+    send_completion_notification(app_handle, filename);
 
     Ok(())
 }
@@ -776,4 +779,13 @@ fn set_error(app_handle: &AppHandle, app_state: &AppState, id: &str, msg: &str) 
         let _ = app_state.save();
     }
     emit_progress(app_handle, id, DownloadState::Error(msg.to_string()), 0, 0);
+}
+
+fn send_completion_notification(app_handle: &AppHandle, filename: &str) {
+    let _ = app_handle
+        .notification()
+        .builder()
+        .title("Deras — Download Complete")
+        .body(format!("{} has finished downloading.", filename))
+        .show();
 }

@@ -1,3 +1,4 @@
+mod clipboard;
 mod commands;
 mod engine;
 mod models;
@@ -5,11 +6,18 @@ mod state;
 
 use engine::ActiveDownloads;
 use state::AppState;
-use tauri::Manager;
+use tauri::{
+    image::Image,
+    menu::{MenuBuilder, MenuItemBuilder},
+    tray::TrayIconBuilder,
+    Manager, RunEvent, WindowEvent,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data_dir = app
@@ -20,6 +28,65 @@ pub fn run() {
             let app_state = AppState::new(data_dir);
             app.manage(app_state);
             app.manage(ActiveDownloads::new());
+
+            // ── System Tray ──────────────────────────────────────────
+            let show = MenuItemBuilder::with_id("show", "Show Deras").build(app)?;
+            let pause_all = MenuItemBuilder::with_id("pause_all", "Pause All").build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+
+            let menu = MenuBuilder::new(app)
+                .item(&show)
+                .separator()
+                .item(&pause_all)
+                .separator()
+                .item(&quit)
+                .build()?;
+
+            let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
+
+            TrayIconBuilder::new()
+                .icon(icon)
+                .tooltip("Deras Download Manager")
+                .menu(&menu)
+                .on_menu_event(move |app, event| {
+                    match event.id().as_ref() {
+                        "show" => {
+                            if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.show();
+                                let _ = win.set_focus();
+                            }
+                        }
+                        "pause_all" => {
+                            // Pause all active downloads
+                            let active = app.state::<ActiveDownloads>();
+                            let tokens = active.tokens.lock().unwrap();
+                            for token in tokens.values() {
+                                token.cancel();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // ── Clipboard Monitoring ─────────────────────────────────
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                clipboard::start_clipboard_monitor(handle).await;
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -31,7 +98,25 @@ pub fn run() {
             commands::cancel_download,
             commands::move_download,
             commands::force_start,
+            commands::verify_checksum,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        // Intercept window close → hide to tray instead of quitting
+        if let RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::CloseRequested { api, .. },
+            ..
+        } = &event
+        {
+            if label == "main" {
+                api.prevent_close();
+                if let Some(win) = app_handle.get_webview_window("main") {
+                    let _ = win.hide();
+                }
+            }
+        }
+    });
 }

@@ -208,3 +208,50 @@ pub fn force_start(
 
     Ok(())
 }
+
+#[tauri::command]
+pub async fn verify_checksum(
+    state: State<'_, AppState>,
+    id: String,
+    hash_type: String,
+    expected_hash: String,
+) -> Result<bool, String> {
+    // Find the task and build the file path
+    let (save_path, filename) = {
+        let downloads = state.downloads.lock().map_err(|e| e.to_string())?;
+        let task = downloads
+            .iter()
+            .find(|d| d.id == id)
+            .ok_or_else(|| "Download not found".to_string())?;
+        (task.save_path.clone(), task.filename.clone())
+    };
+
+    let file_path = crate::clipboard::expand_tilde_public(&save_path).join(&filename);
+
+    // Read the file and compute hash
+    let file_bytes = tokio::fs::read(&file_path)
+        .await
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let computed_hash = match hash_type.to_lowercase().as_str() {
+        "md5" => {
+            use md5::Digest as _;
+            use md5::Md5;
+            let mut hasher = Md5::new();
+            hasher.update(&file_bytes);
+            let result = hasher.finalize();
+            format!("{:x}", result)
+        }
+        "sha256" => {
+            use sha2::Digest as _;
+            use sha2::Sha256;
+            let mut hasher = Sha256::new();
+            hasher.update(&file_bytes);
+            let result = hasher.finalize();
+            format!("{:x}", result)
+        }
+        _ => return Err("Unsupported hash type. Use 'md5' or 'sha256'.".to_string()),
+    };
+
+    Ok(computed_hash.to_lowercase() == expected_hash.trim().to_lowercase())
+}

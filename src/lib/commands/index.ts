@@ -34,6 +34,14 @@ export async function forceStartDownload(id: string): Promise<void> {
 	return invoke<void>("force_start", { id });
 }
 
+export async function verifyChecksum(
+	id: string,
+	hashType: "md5" | "sha256",
+	expectedHash: string,
+): Promise<boolean> {
+	return invoke<boolean>("verify_checksum", { id, hashType, expectedHash });
+}
+
 export interface DownloadProgressPayload {
 	id: string;
 	state: DownloadState;
@@ -45,6 +53,14 @@ export function listenToProgress(
 	callback: (payload: DownloadProgressPayload) => void,
 ): Promise<() => void> {
 	return listen<DownloadProgressPayload>("download_progress", (event) => {
+		callback(event.payload);
+	});
+}
+
+export function listenToClipboardUrl(
+	callback: (url: string) => void,
+): Promise<() => void> {
+	return listen<string>("clipboard_url_detected", (event) => {
 		callback(event.payload);
 	});
 }

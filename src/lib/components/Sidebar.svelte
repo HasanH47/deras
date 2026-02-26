@@ -2,6 +2,7 @@
   import { Download, CheckCircle, ListFilter, Plus } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
   import { Separator } from "$lib/components/ui/separator";
+  import ThemeToggle from "./ThemeToggle.svelte";
 
   type FilterMode = "all" | "downloading" | "completed";
 
@@ -30,9 +31,12 @@
   class="flex h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
 >
   <!-- Logo / App Name -->
-  <div class="flex h-14 items-center gap-2 px-5">
-    <Download class="h-5 w-5 text-primary" />
-    <span class="text-base font-bold tracking-tight">Deras</span>
+  <div class="flex h-14 items-center justify-between px-5">
+    <div class="flex items-center gap-2">
+      <Download class="h-5 w-5 text-primary" />
+      <span class="text-base font-bold tracking-tight">Deras</span>
+    </div>
+    <ThemeToggle />
   </div>
 
   <Separator />

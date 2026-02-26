@@ -44,16 +44,16 @@ This document breaks down the development of the Deras Download Manager into man
 - [x] Build an automatic retry mechanism for failed transient downloads.
 - [x] Design and implement error state UI and user notifications.
 
-## Sprint 5: System Integration & Polish (Post-MVP)
+## Sprint 5: System Integration & Polish (Post-MVP) ✅
 
 **Goal:** Integrate deeply with the Linux Desktop environment and refine the UX.
 
-- [ ] Implement Clipboard monitoring in Rust to detect copied URLs.
-- [ ] Build the "New Download Detected" popup modal triggered by clipboard.
-- [ ] Implement Dark/Light mode theming leveraging `shadcn-svelte`.
-- [ ] Add system tray icon and background running capability.
-- [ ] Integrate OS-level desktop notifications for completed downloads.
-- [ ] (Optional) Add MD5/SHA-256 checksum verification tool in the UI.
+- [x] Implement Clipboard monitoring in Rust to detect copied URLs.
+- [x] Build the "New Download Detected" popup modal triggered by clipboard.
+- [x] Implement Dark/Light mode theming leveraging `shadcn-svelte`.
+- [x] Add system tray icon and background running capability.
+- [x] Integrate OS-level desktop notifications for completed downloads.
+- [x] Add MD5/SHA-256 checksum verification tool in the UI.
 
 ## Future Sprints (Backlog)
 

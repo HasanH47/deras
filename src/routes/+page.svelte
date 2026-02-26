@@ -2,8 +2,14 @@
   import Sidebar from "$lib/components/Sidebar.svelte";
   import DownloadList from "$lib/components/DownloadList.svelte";
   import AddDownloadDialog from "$lib/components/AddDownloadDialog.svelte";
+  import NewDownloadModal from "$lib/components/NewDownloadModal.svelte";
+  import ChecksumDialog from "$lib/components/ChecksumDialog.svelte";
   import type { DownloadTask } from "$lib/types/models";
-  import { getDownloads, listenToProgress } from "$lib/commands";
+  import {
+    getDownloads,
+    listenToProgress,
+    listenToClipboardUrl,
+  } from "$lib/commands";
   import type { DownloadProgressPayload } from "$lib/commands";
   import { onMount } from "svelte";
   import { toast } from "svelte-sonner";
@@ -13,6 +19,15 @@
   let downloads = $state<DownloadTask[]>([]);
   let activeFilter = $state<FilterMode>("all");
   let showAddDialog = $state(false);
+
+  // Clipboard auto-detect modal
+  let showClipboardModal = $state(false);
+  let clipboardUrl = $state("");
+
+  // Checksum dialog
+  let showChecksumDialog = $state(false);
+  let checksumTaskId = $state("");
+  let checksumFilename = $state("");
 
   let filteredDownloads = $derived.by(() => {
     switch (activeFilter) {
@@ -43,8 +58,20 @@
     showAddDialog = false;
   }
 
+  function handleClipboardDownloadAdded(task: DownloadTask) {
+    downloads = [task, ...downloads];
+    showClipboardModal = false;
+    clipboardUrl = "";
+  }
+
   function handleDownloadRemoved(id: string) {
     downloads = downloads.filter((d) => d.id !== id);
+  }
+
+  function handleChecksum(id: string, filename: string) {
+    checksumTaskId = id;
+    checksumFilename = filename;
+    showChecksumDialog = true;
   }
 
   function handleProgressUpdate(payload: DownloadProgressPayload) {
@@ -53,7 +80,6 @@
         const prev = d.state.type;
         const next = payload.state.type;
 
-        // Toast on state transitions
         if (prev !== next) {
           if (next === "Completed") {
             toast.success(`Download complete: ${d.filename}`);
@@ -78,10 +104,15 @@
   onMount(() => {
     loadDownloads();
 
-    const unlistenPromise = listenToProgress(handleProgressUpdate);
+    const unlistenProgress = listenToProgress(handleProgressUpdate);
+    const unlistenClipboard = listenToClipboardUrl((url: string) => {
+      clipboardUrl = url;
+      showClipboardModal = true;
+    });
 
     return () => {
-      unlistenPromise.then((unlisten) => unlisten());
+      unlistenProgress.then((unlisten) => unlisten());
+      unlistenClipboard.then((unlisten) => unlisten());
     };
   });
 </script>
@@ -109,8 +140,21 @@
       downloads={filteredDownloads}
       onRemove={handleDownloadRemoved}
       onReorder={loadDownloads}
+      onChecksum={handleChecksum}
     />
   </div>
 </main>
 
 <AddDownloadDialog bind:open={showAddDialog} onAdded={handleDownloadAdded} />
+
+<NewDownloadModal
+  bind:open={showClipboardModal}
+  bind:url={clipboardUrl}
+  onAdded={handleClipboardDownloadAdded}
+/>
+
+<ChecksumDialog
+  bind:open={showChecksumDialog}
+  downloadId={checksumTaskId}
+  filename={checksumFilename}
+/>
